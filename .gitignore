@@ -1,0 +1,13 @@
+# Python кэш и виртуальные окружения
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# IDE и редакторы
+.vscode/
+.idea/
+*.suo
+*.user
