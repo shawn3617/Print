@@ -50,22 +50,32 @@ class TestBatchUI(unittest.TestCase):
         self.assertEqual(self.win.table.rowCount(), 0)
 
     def test_sort_by_sheet_number_multi_dwg(self):
-        f1 = Frame(1, "2", "Лист 2", (0,0,0), (10,10,0), "Model", "A4", dwg_name="B_file.dwg")
-        f2 = Frame(2, "1", "Лист 1", (0,0,0), (10,10,0), "Model", "A4", dwg_name="B_file.dwg")
-        f3 = Frame(3, "5", "Лист 5", (0,0,0), (10,10,0), "Model", "A4", dwg_name="A_file.dwg")
+        # Файл 1 (открыт первым) содержит листы 6..10
+        frames_file1 = [
+            Frame(i, str(i), f"Лист {i}", (0,0,0), (10,10,0), "Model", "A4", dwg_name="file_6_to_10.dwg")
+            for i in range(6, 11)
+        ]
+        # Файл 2 (добавлен вторым) содержит листы 1..5
+        frames_file2 = [
+            Frame(i, str(i), f"Лист {i}", (0,0,0), (10,10,0), "Model", "A4", dwg_name="file_1_to_5.dwg")
+            for i in range(1, 6)
+        ]
 
-        self.win.frames = [f1, f2, f3]
+        # Имитируем добавление: сначала 6..10, затем 1..5
+        self.win.frames = frames_file1 + frames_file2
         self.win.table.setRowCount(0)
         for f in self.win.frames:
             self.win.add_table_row(True, f.sheet_number, f.sheet_name, f.paper_format, f.source_type, dwg_name=f.dwg_name)
 
         self.win.sort_by_sheet_number()
 
-        # Ожидаем группировку: сначала A_file (Лист 5), затем B_file (Лист 1, Лист 2)
-        sorted_dwgs = [f.dwg_name for f in self.win.frames]
+        # Ожидаем сквозную последовательность 1..10
         sorted_nums = [f.sheet_number for f in self.win.frames]
-        self.assertEqual(sorted_dwgs, ["A_file.dwg", "B_file.dwg", "B_file.dwg"])
-        self.assertEqual(sorted_nums, ["5", "1", "2"])
+        self.assertEqual(sorted_nums, ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"])
+        # Проверяем строки таблицы
+        for row in range(10):
+            self.assertEqual(self.win.table.item(row, 1).text(), str(row + 1))
+
 
     def test_handle_dropped_urls(self):
         url1 = QUrl.fromLocalFile(r"C:\Drawings\test1.dwg")

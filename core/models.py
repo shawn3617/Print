@@ -152,7 +152,29 @@ def get_paper_size_mm(paper_format: str) -> Tuple[float, float]:
         return ALL_FORMATS[paper_format]
     return (594, 420)  # A2 по умолчанию
 
+def natural_sheet_sort_key(sheet_number: str):
+    """
+    Ключ для естественной (естественно-числовой) сортировки номеров листов.
+    Корректно упорядочивает листы вида: '1', '2', ..., '4', '4.1', '4а', '4б', ..., '10'.
+    Разбивает строку на числовые и буквенные составляющие.
+    """
+    import re
+    if not sheet_number:
+        return [(0, 0)]
+    s = str(sheet_number).strip()
+    tokens = re.split(r'(\d+)', s)
+    result = []
+    for token in tokens:
+        if not token:
+            continue
+        if token.isdigit():
+            result.append((0, int(token)))
+        else:
+            result.append((1, token.lower()))
+    return result if result else [(0, 0)]
+
 @dataclass
+
 class Frame:
     """
     Класс, описывающий найденную рамку чертежа.

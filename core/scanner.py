@@ -1,6 +1,7 @@
 from typing import List
-from core.models import Frame
+from core.models import Frame, natural_sheet_sort_key
 from parsers.block_parser import BlockParser
+
 from parsers.spds_parser import SPDSParser
 from parsers.polyline_parser import PolylineParser
 
@@ -68,16 +69,10 @@ class DocumentScanner:
             if not f.dwg_name and doc_name:
                 f.dwg_name = doc_name
 
-        # Сортируем рамки по номеру листа (если возможно)
-        def sort_key(frame):
-            try:
-                # Всегда возвращаем кортеж (is_string, value), чтобы float и str не сравнивались напрямую
-                return (0, float(frame.sheet_number))
-            except ValueError:
-                return (1, frame.sheet_number)
-                
-        all_frames.sort(key=sort_key)
+        # Сортируем рамки по номеру листа с естественной сортировкой (4, 4а, 4.1, 5...)
+        all_frames.sort(key=lambda f: natural_sheet_sort_key(f.sheet_number))
         return all_frames
+
 
 
     def scan_layouts(self, doc) -> List[Frame]:
@@ -220,5 +215,9 @@ class DocumentScanner:
             except Exception:
                 pass
                 
+        # Сквозная сортировка всех рамок по номеру листа
+        all_frames.sort(key=lambda f: (natural_sheet_sort_key(f.sheet_number), f.dwg_name.lower() if f.dwg_name else ""))
         return all_frames
+
+
 

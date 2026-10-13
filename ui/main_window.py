@@ -19,6 +19,8 @@ from core.autocad_connector import AutoCADConnector
 from core.scanner import DocumentScanner
 from core.printer import BatchPrinter, PrintCancelledError
 from core.config_manager import ConfigManager
+from core.models import natural_sheet_sort_key
+
 
 class ReorderableTableWidget(QTableWidget):
     row_moved = Signal(int, int) # from_row, to_row
@@ -557,11 +559,10 @@ class PrintManagerUI(QMainWindow):
                 QMessageBox.information(self, "Результат", "В указанных чертежах рамки/листы не найдены.")
                 return
 
-            self.frames.extend(new_frames)
-            
             self._is_updating_table = True
             try:
                 for frame in new_frames:
+                    self.frames.append(frame)
                     self.add_table_row(
                         True,
                         frame.sheet_number,
@@ -573,14 +574,16 @@ class PrintManagerUI(QMainWindow):
             finally:
                 self._is_updating_table = False
 
-            self.update_print_counter()
+            # Выполняем сквозную сортировку по номерам листов для всего общего списка чертежей
+            self.sort_by_sheet_number()
             self.refresh_document_status()
 
             QMessageBox.information(
                 self,
                 "Сканирование завершено",
-                f"Обработано файлов: {len(file_paths)}\nДобавлено листов: {len(new_frames)}"
+                f"Обработано файлов: {len(file_paths)}\nДобавлено листов: {len(new_frames)} (всего в очереди: {len(self.frames)})"
             )
+
 
         except Exception as e:
             progress_dlg.close()
@@ -847,12 +850,10 @@ class PrintManagerUI(QMainWindow):
             
         def sort_key(item):
             frame = item[0]
-            try:
-                num_part = (0, float(frame.sheet_number))
-            except ValueError:
-                num_part = (1, frame.sheet_number)
             dwg_part = frame.dwg_name.lower() if frame.dwg_name else ""
-            return (dwg_part, num_part)
+            return (natural_sheet_sort_key(frame.sheet_number), dwg_part)
+
+
                 
         pairs.sort(key=sort_key)
         self.frames = [p[0] for p in pairs]
