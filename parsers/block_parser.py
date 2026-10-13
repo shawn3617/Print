@@ -55,6 +55,7 @@ class BlockParser(BaseParser):
                                     
                         w = max_pt[0] - min_pt[0]
                         h = max_pt[1] - min_pt[1]
+                        blk_scale = getattr(obj, 'XScaleFactor', None)
                         frame = Frame(
                             object_id=obj.ObjectID,
                             sheet_number=sheet_number,
@@ -62,7 +63,7 @@ class BlockParser(BaseParser):
                             min_point=min_pt,
                             max_point=max_pt,
                             source_type="Block",
-                            paper_format=detect_paper_format(w, h, block_name)
+                            paper_format=detect_paper_format(w, h, block_name, scale=blk_scale)
                         )
                         frames.append(frame)
                     except Exception as e:

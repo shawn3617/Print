@@ -129,6 +129,7 @@ class PolylineParser(BaseParser):
                     name_texts.sort(key=lambda x: x[0], reverse=True)
                     sheet_name = " ".join([txt for y, txt in name_texts])
                             
+                scale = self._get_scale(width, height)
                 frame = Frame(
                     object_id=poly.ObjectID,
                     sheet_number=sheet_number,
@@ -136,7 +137,7 @@ class PolylineParser(BaseParser):
                     min_point=min_pt,
                     max_point=max_pt,
                     source_type="Polyline",
-                    paper_format=detect_paper_format(width, height)
+                    paper_format=detect_paper_format(width, height, scale=scale)
                 )
                 
                 # Сохраним найденные тексты прямо в объект для отладки

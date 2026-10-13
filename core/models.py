@@ -24,10 +24,11 @@ for _base_name, (_fw, _fh) in GOST_FORMATS.items():
 # Объединяем все форматы
 ALL_FORMATS = {**GOST_FORMATS, **GOST_EXTENDED}
 
-def detect_paper_format(width: float, height: float, block_name: str = "") -> str:
+def detect_paper_format(width: float, height: float, block_name: str = "", scale: float = None) -> str:
     """
     Определяет формат бумаги. Сначала пытается извлечь его из названия блока.
-    Если не вышло, определяет по размерам BoundingBox рамки.
+    Если передан точный масштаб scale, вычисляет физический размер в мм.
+    Иначе определяет по размерам BoundingBox с приоритетом стандартных масштабов ГОСТ (1:100, 1:50, 1:1...).
     """
     import re
     
@@ -51,11 +52,24 @@ def detect_paper_format(width: float, height: float, block_name: str = "") -> st
                     err_h = abs(scale_h - rh)
                     if err_w / rw < 0.05 and err_h / rh < 0.05:
                         return fmt
-                
-                # Если валидация не прошла, продолжаем поиск (вдруг имя обманчиво)
-    # 2. Математическое определение по размерам
+
     w, h = max(width, height), min(width, height)
-    
+
+    # 2. Если известен точный масштаб (например, из свойств СПДС)
+    if scale and scale > 0:
+        w_mm = w / scale
+        h_mm = h / scale
+        best_fmt = None
+        min_err = float('inf')
+        for fmt, (fw, fh) in ALL_FORMATS.items():
+            diff = abs(w_mm - fw) + abs(h_mm - fh)
+            if diff < min_err:
+                min_err = diff
+                best_fmt = fmt
+        if best_fmt and min_err < 15.0: # Погрешность в пределах 15 мм
+            return best_fmt
+
+    # 3. Математическое определение по размерам
     matches = []  # Список (суммарная_ошибка, масштаб, формат)
     
     for fmt, (fw, fh) in ALL_FORMATS.items():
@@ -72,21 +86,38 @@ def detect_paper_format(width: float, height: float, block_name: str = "") -> st
                 matches.append((total_err, rw, fmt))
     
     if matches:
-        matches.sort(key=lambda x: (round(x[0], 4), x[1]))
+        def match_priority(m):
+            err, sc, fmt = m
+            r_err = round(err, 4)
+            # Приоритет стандартным масштабам чертежей по ГОСТ 2.302-68:
+            # 1:100 — абсолютный стандарт в проектировании (архитектура, конструкции, СПДС)
+            scale_rank = 0
+            if sc == 100:
+                scale_rank = -10
+            elif sc in [1, 50, 20, 200]:
+                scale_rank = -5
+            return (r_err, scale_rank, sc)
+            
+        matches.sort(key=match_priority)
         return matches[0][2]
     
     # Фолбэк: определяем по короткой стороне
     fallback = []
     for fmt, (fw, fh) in ALL_FORMATS.items():
-        scale = h / fh
-        r = round(scale)
+        scale_val = h / fh
+        r = round(scale_val)
         if r >= 1:
-            err = abs(scale - r)
+            err = abs(scale_val - r)
             if err / r < 0.005:
                 fallback.append((err, r, fmt))
     
     if fallback:
-        fallback.sort(key=lambda x: (round(x[0], 4), x[1]))
+        def fallback_priority(m):
+            err, sc, fmt = m
+            r_err = round(err, 4)
+            scale_rank = -10 if sc == 100 else (-5 if sc in [1, 50, 20, 200] else 0)
+            return (r_err, scale_rank, sc)
+        fallback.sort(key=fallback_priority)
         return fallback[0][2]
     
     return "A2"

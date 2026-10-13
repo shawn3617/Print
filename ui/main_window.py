@@ -1,15 +1,83 @@
+import os
 import sys
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QPushButton, QComboBox,
     QLabel, QHeaderView, QCheckBox, QGroupBox, QFormLayout,
-    QMessageBox, QFileDialog
+    QMessageBox, QFileDialog, QAbstractItemView
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal, QMimeData
+from PySide6.QtGui import QDrag
 
 from core.autocad_connector import AutoCADConnector
 from core.scanner import DocumentScanner
 from core.printer import BatchPrinter
+
+class ReorderableTableWidget(QTableWidget):
+    row_moved = Signal(int, int) # from_row, to_row
+    key_move_requested = Signal(int) # -1: up, 1: down
+
+    def __init__(self, rows=0, cols=0, parent=None):
+        super().__init__(rows, cols, parent)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.viewport().setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
+        self.setDefaultDropAction(Qt.DropAction.CopyAction)
+
+    def startDrag(self, supportedActions):
+        row = self.currentRow()
+        if row < 0:
+            return
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData("application/x-print-row", str(row).encode())
+        drag.setMimeData(mime)
+        # CopyAction гарантирует, что Qt не удалит строки сам при завершении drag
+        drag.exec(Qt.DropAction.CopyAction)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat("application/x-print-row"):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasFormat("application/x-print-row"):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasFormat("application/x-print-row"):
+            try:
+                src_row = int(event.mimeData().data("application/x-print-row").data().decode())
+                pos = event.position().toPoint()
+                drop_row = self.rowAt(pos.y())
+                if drop_row == -1:
+                    drop_row = self.rowCount() - 1
+                if 0 <= src_row < self.rowCount() and 0 <= drop_row < self.rowCount() and src_row != drop_row:
+                    event.acceptProposedAction()
+                    self.row_moved.emit(src_row, drop_row)
+                    return
+            except Exception as e:
+                print(f"Drop error: {e}")
+        event.ignore()
+
+    def keyPressEvent(self, event):
+        if event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier):
+            if event.key() == Qt.Key.Key_Up:
+                self.key_move_requested.emit(-1)
+                event.accept()
+                return
+            elif event.key() == Qt.Key.Key_Down:
+                self.key_move_requested.emit(1)
+                event.accept()
+                return
+        super().keyPressEvent(event)
 
 class PrintManagerUI(QMainWindow):
     def __init__(self):
@@ -41,7 +109,11 @@ class PrintManagerUI(QMainWindow):
             QPushButton#btn_print { background-color: #a6e3a1; font-size: 16px; padding: 15px; }
             QPushButton#btn_print:hover { background-color: #94e2d5; }
             QTableWidget { background-color: #181825; color: #cdd6f4; gridline-color: #313244; border: 1px solid #45475a; border-radius: 8px; }
+            QTableWidget::item:selected { background-color: #45475a; color: #ffffff; }
             QHeaderView::section { background-color: #313244; color: #cdd6f4; padding: 5px; border: 1px solid #45475a; font-weight: bold; }
+            QPushButton[cssClass="btn_tool"] { background-color: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 6px; padding: 6px 14px; font-size: 13px; font-weight: normal; }
+            QPushButton[cssClass="btn_tool"]:hover { background-color: #45475a; color: #ffffff; }
+            QPushButton[cssClass="btn_tool"]:pressed { background-color: #585b70; }
             QScrollBar:vertical { background-color: #181825; width: 14px; margin: 0px; }
             QScrollBar::handle:vertical { background-color: #45475a; min-height: 20px; border-radius: 7px; }
             QScrollBar::handle:vertical:hover { background-color: #585b70; }
@@ -70,7 +142,7 @@ class PrintManagerUI(QMainWindow):
         top_bar.addWidget(btn_scan)
         left_layout.addLayout(top_bar)
 
-        self.table = QTableWidget(0, 5)
+        self.table = ReorderableTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["Печать", "Лист", "Название листа", "Формат", "Источник"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
@@ -79,7 +151,46 @@ class PrintManagerUI(QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(True)
+        self.table.setToolTip("Листы можно перетаскивать мышкой или перемещать кнопками «Вверх» / «Вниз» (Ctrl+↑ / Ctrl+↓)")
+        self.table.row_moved.connect(self.on_row_drag_moved)
+        self.table.key_move_requested.connect(self.on_key_move_requested)
         left_layout.addWidget(self.table)
+
+        # Панель управления порядком и выбором листов
+        table_tools = QHBoxLayout()
+        table_tools.setSpacing(8)
+
+        btn_select_all = QPushButton("Выбрать все")
+        btn_select_all.setProperty("cssClass", "btn_tool")
+        btn_select_all.clicked.connect(lambda: self.select_all_rows(True))
+        table_tools.addWidget(btn_select_all)
+
+        btn_deselect_all = QPushButton("Снять все")
+        btn_deselect_all.setProperty("cssClass", "btn_tool")
+        btn_deselect_all.clicked.connect(lambda: self.select_all_rows(False))
+        table_tools.addWidget(btn_deselect_all)
+
+        btn_sort_num = QPushButton("По номерам")
+        btn_sort_num.setProperty("cssClass", "btn_tool")
+        btn_sort_num.setToolTip("Сбросить ручной порядок и отсортировать по возрастанию номеров листов")
+        btn_sort_num.clicked.connect(self.sort_by_sheet_number)
+        table_tools.addWidget(btn_sort_num)
+
+        table_tools.addStretch()
+
+        btn_move_up = QPushButton("▲ Вверх (Ctrl+↑)")
+        btn_move_up.setProperty("cssClass", "btn_tool")
+        btn_move_up.setToolTip("Поднять выбранный лист выше в очереди печати")
+        btn_move_up.clicked.connect(self.move_row_up)
+        table_tools.addWidget(btn_move_up)
+
+        btn_move_down = QPushButton("▼ Вниз (Ctrl+↓)")
+        btn_move_down.setProperty("cssClass", "btn_tool")
+        btn_move_down.setToolTip("Опустить выбранный лист ниже в очереди печати")
+        btn_move_down.clicked.connect(self.move_row_down)
+        table_tools.addWidget(btn_move_down)
+
+        left_layout.addLayout(table_tools)
         main_layout.addLayout(left_layout, stretch=3)
 
         # ПРАВАЯ ЧАСТЬ
@@ -102,6 +213,11 @@ class PrintManagerUI(QMainWindow):
         self.combo_mode = QComboBox()
         self.combo_mode.addItems(["В отдельные файлы", "В один файл (PDF)"])
         form_layout.addRow(QLabel("Режим:"), self.combo_mode)
+
+        self.chk_open_after = QCheckBox("Открыть результат")
+        self.chk_open_after.setChecked(True)
+        self.chk_open_after.setToolTip("Автоматически открыть объединенный PDF (или папку) после завершения печати")
+        form_layout.addRow("", self.chk_open_after)
 
         right_layout.addWidget(group_printer)
         right_layout.addStretch()
@@ -204,25 +320,121 @@ class PrintManagerUI(QMainWindow):
         
         item_num = QTableWidgetItem(num)
         item_num.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.table.setItem(row, 1, item_num)
         
-        self.table.setItem(row, 2, QTableWidgetItem(name))
+        item_name = QTableWidgetItem(name)
         
         item_fmt = QTableWidgetItem(paper_format)
         item_fmt.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.table.setItem(row, 3, item_fmt)
         
-        self.table.setItem(row, 4, QTableWidgetItem(source))
+        item_src = QTableWidgetItem(source)
+        item_src.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsDragEnabled
+        for it in (item_num, item_name, item_fmt, item_src):
+            it.setFlags(flags)
+            
+        self.table.setItem(row, 1, item_num)
+        self.table.setItem(row, 2, item_name)
+        self.table.setItem(row, 3, item_fmt)
+        self.table.setItem(row, 4, item_src)
         
     def update_print_counter(self):
         count = 0
         for i in range(self.table.rowCount()):
             chk_widget = self.table.cellWidget(i, 0)
-            chk = chk_widget.layout().itemAt(0).widget()
-            if chk.isChecked():
-                count += 1
+            if chk_widget:
+                chk = chk_widget.layout().itemAt(0).widget()
+                if chk.isChecked():
+                    count += 1
         self.btn_print.setText(f"ПЕЧАТЬ ({count} листов)")
         self.btn_print.setEnabled(count > 0)
+
+    def is_row_checked(self, row: int) -> bool:
+        chk_widget = self.table.cellWidget(row, 0)
+        if chk_widget:
+            chk = chk_widget.layout().itemAt(0).widget()
+            return chk.isChecked()
+        return True
+
+    def on_key_move_requested(self, direction: int):
+        if direction < 0:
+            self.move_row_up()
+        else:
+            self.move_row_down()
+
+    def move_row_up(self):
+        row = self.table.currentRow()
+        if row > 0:
+            self.move_row(row, row - 1)
+
+    def move_row_down(self):
+        row = self.table.currentRow()
+        if 0 <= row < self.table.rowCount() - 1:
+            self.move_row(row, row + 1)
+
+    def on_row_drag_moved(self, from_row: int, to_row: int):
+        if from_row != to_row:
+            self.move_row(from_row, to_row)
+
+    def move_row(self, from_row: int, to_row: int):
+        if from_row == to_row or not self.frames:
+            return
+        if not (0 <= from_row < len(self.frames) and 0 <= to_row < len(self.frames)):
+            return
+
+        # 1. Сохраняем состояние чекбоксов для каждого фрейма ДО перемещения
+        checked_states = []
+        for r in range(len(self.frames)):
+            checked_states.append(self.is_row_checked(r))
+
+        # 2. Перемещаем в self.frames и в checked_states
+        frame = self.frames.pop(from_row)
+        self.frames.insert(to_row, frame)
+
+        chk = checked_states.pop(from_row)
+        checked_states.insert(to_row, chk)
+
+        # 3. Перестраиваем строки таблицы
+        self.table.setRowCount(0)
+        for i, f in enumerate(self.frames):
+            is_chk = checked_states[i] if i < len(checked_states) else True
+            self.add_table_row(is_chk, f.sheet_number, f.sheet_name, f.paper_format, f.source_type)
+
+        # 4. Выделяем строку на новом месте
+        self.table.selectRow(to_row)
+        self.update_print_counter()
+
+    def select_all_rows(self, checked: bool = True):
+        for i in range(self.table.rowCount()):
+            chk_widget = self.table.cellWidget(i, 0)
+            if chk_widget:
+                chk = chk_widget.layout().itemAt(0).widget()
+                chk.setChecked(checked)
+        self.update_print_counter()
+
+    def sort_by_sheet_number(self):
+        if not self.frames:
+            return
+        # Сохраняем связку (frame, is_checked)
+        pairs = []
+        for i in range(self.table.rowCount()):
+            pairs.append((self.frames[i], self.is_row_checked(i)))
+            
+        def sort_key(item):
+            frame = item[0]
+            try:
+                return (0, float(frame.sheet_number))
+            except ValueError:
+                return (1, frame.sheet_number)
+                
+        pairs.sort(key=sort_key)
+        self.frames = [p[0] for p in pairs]
+        checked_states = [p[1] for p in pairs]
+        
+        self.table.setRowCount(0)
+        for i, frame in enumerate(self.frames):
+            self.add_table_row(checked_states[i], frame.sheet_number, frame.sheet_name, frame.paper_format, frame.source_type)
+        self.update_print_counter()
 
     def print_selected_frames(self):
         if not self.printer or not self.frames:
@@ -270,6 +482,14 @@ class PrintManagerUI(QMainWindow):
                 output_path=output_path,
                 merge_pdf=merge_pdf
             )
+            
+            # Открываем готовый объединенный PDF или папку с файлами
+            if self.chk_open_after.isChecked():
+                try:
+                    os.startfile(output_path)
+                except Exception as e:
+                    print(f"Не удалось открыть файл: {e}")
+
             QMessageBox.information(self, "Успех", f"Успешно напечатано {len(selected_frames)} листов в:\n{output_path}")
         except Exception as e:
             QMessageBox.critical(self, "Ошибка печати", f"Произошла ошибка при печати:\n{e}")

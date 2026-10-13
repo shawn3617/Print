@@ -86,6 +86,69 @@ class BatchPrinter:
             print(f"Ошибка при построении media_map: {e}")
         return result
 
+    def _disable_pc3_view_file(self, printer_name: str) -> bool:
+        """
+        Проверяет и отключает опцию 'View_New_File' (Просмотр результатов в программе просмотра)
+        в PC3-файлах AutoCAD, чтобы при пакетной печати не открывался каждый отдельный лист.
+        """
+        if not printer_name.lower().endswith(".pc3"):
+            return False
+            
+        import glob
+        import struct
+        import zlib
+        import re
+        
+        search_dirs = []
+        try:
+            pref_path = self.doc.Application.Preferences.Files.PrinterConfigPath
+            if pref_path:
+                search_dirs.extend([p.strip() for p in pref_path.split(";") if p.strip()])
+        except:
+            pass
+            
+        appdata_patterns = [
+            os.path.expandvars(r"%APPDATA%\Autodesk\**\Plotters"),
+        ]
+        for pat in appdata_patterns:
+            search_dirs.extend(glob.glob(pat, recursive=True))
+            
+        prefix = b"PIAFILEVERSION_2.0,PC3VER1,compress\r\npmzlibcodec"
+        modified_any = False
+        
+        pc3_paths = []
+        for sdir in search_dirs:
+            if not os.path.isdir(sdir):
+                continue
+            for f in os.listdir(sdir):
+                if f.lower() == printer_name.lower() or "pdf" in f.lower():
+                    if f.lower().endswith(".pc3"):
+                        pc3_paths.append(os.path.join(sdir, f))
+                        
+        for pc3_path in set(pc3_paths):
+            try:
+                with open(pc3_path, "rb") as f:
+                    data = f.read()
+                if not data.startswith(prefix) or len(data) < 60:
+                    continue
+                body = data[60:]
+                decomp = zlib.decompress(body)
+                txt = decomp.decode("latin1")
+                pattern = r'(name="View_New_File\s*\r?\n\s*value=)TRUE'
+                if re.search(pattern, txt):
+                    txt_new = re.sub(pattern, r'\g<1>FALSE', txt)
+                    decomp_new = txt_new.encode("latin1")
+                    comp_new = zlib.compress(decomp_new)
+                    adler_new = zlib.adler32(comp_new)
+                    hdr_new = prefix + struct.pack("<III", adler_new, len(decomp_new), len(comp_new))
+                    with open(pc3_path, "wb") as f:
+                        f.write(hdr_new + comp_new)
+                    modified_any = True
+            except Exception as e:
+                print(f"Ошибка при патчинге PC3 {pc3_path}: {e}")
+                
+        return modified_any
+
     def print_frames(self, frames, printer_name: str, canonical_media_name: str, style_name: str, output_path: str, merge_pdf: bool = False):
         """
         Отправляет выбранные рамки на печать в PDF.
@@ -96,6 +159,13 @@ class BatchPrinter:
         import shutil
         
         layout = self.doc.ModelSpace.Layout
+        
+        # Отключаем автооткрытие каждого листа в PDF-просмотрщике
+        try:
+            if self._disable_pc3_view_file(printer_name):
+                layout.RefreshPlotDeviceInfo()
+        except Exception as e:
+            print(f"Предупреждение: не удалось проверить PC3 настройки: {e}")
         
         # Базовые настройки
         layout.ConfigName = printer_name
@@ -194,8 +264,16 @@ class BatchPrinter:
                 for pdf_file in temp_files:
                     merger.append(pdf_file)
                     
-                merger.write(output_path)
-                merger.close()
+                try:
+                    merger.write(output_path)
+                except PermissionError:
+                    raise PermissionError(
+                        f"Не удалось записать файл '{os.path.basename(output_path)}'.\n"
+                        f"Он уже открыт в программе просмотра (например, PDF-XChange).\n"
+                        f"Пожалуйста, закройте вкладку с этим файлом и повторите печать."
+                    )
+                finally:
+                    merger.close()
                 
         finally:
             # Возвращаем BACKGROUNDPLOT

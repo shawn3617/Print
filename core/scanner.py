@@ -25,6 +25,34 @@ class DocumentScanner:
             except Exception as e:
                 print(f"Ошибка при работе парсера {parser.__class__.__name__}: {e}")
         
+        # Согласование масштабов рамок чертежа:
+        # Если в чертеже преобладает определенный масштаб (например, 1:100),
+        # перепроверяем форматы рамок через доминирующий масштаб проекта.
+        if len(all_frames) > 1:
+            try:
+                from core.models import ALL_FORMATS, detect_paper_format
+                from collections import Counter
+                scales = []
+                for f in all_frames:
+                    fw, fh = ALL_FORMATS.get(f.paper_format, (594, 420))
+                    w = max(abs(f.max_point[0] - f.min_point[0]), abs(f.max_point[1] - f.min_point[1]))
+                    sc = round(w / fw)
+                    if sc > 0:
+                        scales.append(sc)
+                if scales:
+                    common_scale, count = Counter(scales).most_common(1)[0]
+                    if count >= len(all_frames) * 0.5 and common_scale in [1, 10, 20, 25, 50, 100, 200]:
+                        for f in all_frames:
+                            fw, fh = ALL_FORMATS.get(f.paper_format, (594, 420))
+                            w = max(abs(f.max_point[0] - f.min_point[0]), abs(f.max_point[1] - f.min_point[1]))
+                            h = min(abs(f.max_point[0] - f.min_point[0]), abs(f.max_point[1] - f.min_point[1]))
+                            if round(w / fw) != common_scale:
+                                corrected_fmt = detect_paper_format(w, h, scale=common_scale)
+                                if corrected_fmt in ALL_FORMATS:
+                                    f.paper_format = corrected_fmt
+            except Exception as e:
+                print(f"Ошибка при согласовании масштабов: {e}")
+
         # Сортируем рамки по номеру листа (если возможно)
         def sort_key(frame):
             try:
