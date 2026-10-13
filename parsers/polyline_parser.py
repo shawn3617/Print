@@ -137,7 +137,8 @@ class PolylineParser(BaseParser):
                     min_point=min_pt,
                     max_point=max_pt,
                     source_type="Polyline",
-                    paper_format=detect_paper_format(width, height, scale=scale)
+                    paper_format=detect_paper_format(width, height, scale=scale),
+                    handle=getattr(poly, 'Handle', '')
                 )
                 
                 # Сохраним найденные тексты прямо в объект для отладки

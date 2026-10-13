@@ -110,7 +110,8 @@ class SPDSParser(BaseParser):
                         min_point=min_pt,
                         max_point=max_pt,
                         source_type="SPDS",
-                        paper_format=detected_fmt
+                        paper_format=detected_fmt,
+                        handle=getattr(obj, 'Handle', '')
                     )
                     frames.append(frame)
                 except Exception as e:

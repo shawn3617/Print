@@ -8,7 +8,8 @@ def test_reorder():
     if not app:
         app = QApplication(sys.argv)
         
-    win = PrintManagerUI()
+    from unittest.mock import MagicMock
+    win = PrintManagerUI(config_manager=MagicMock())
     
     # Создаем 4 тестовые рамки
     win.frames = [

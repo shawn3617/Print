@@ -122,6 +122,30 @@ def detect_paper_format(width: float, height: float, block_name: str = "", scale
     
     return "A2"
 
+def detect_format_from_media_name(media_name: str) -> str:
+    """
+    Определяет формат ГОСТ (A0..A4, A3x3 и т.д.) по названию формата бумаги плоттера.
+    """
+    import re
+    if not media_name:
+        return "A3"
+        
+    # 1. Поиск физических размеров в названии (например 420.00 x 297.00 или 1485 x 420)
+    nums = [float(x) for x in re.findall(r'\d+(?:\.\d+)?', media_name)]
+    dims = [n for n in nums if n >= 100]
+    if len(dims) >= 2:
+        pw, ph = max(dims[-2:]), min(dims[-2:])
+        for fmt, (fw, fh) in ALL_FORMATS.items():
+            if abs(pw - max(fw, fh)) < 3 and abs(ph - min(fw, fh)) < 3:
+                return fmt
+
+    # 2. Поиск точного совпадения имени формата (например A3, A4, A3x4)
+    for fmt in sorted(ALL_FORMATS.keys(), key=len, reverse=True):
+        if re.search(r'\b' + re.escape(fmt) + r'\b', media_name, re.IGNORECASE):
+            return fmt
+
+    return "A3"
+
 def get_paper_size_mm(paper_format: str) -> Tuple[float, float]:
     """Возвращает физические размеры формата в мм (ширина, высота)"""
     if paper_format in ALL_FORMATS:
@@ -140,3 +164,7 @@ class Frame:
     max_point: Tuple[float, float, float]   # Правый верхний угол BoundingBox (X, Y, Z)
     source_type: str                        # Тип источника (SPDS, Polyline, Block)
     paper_format: str = "A2"               # Формат бумаги (A4, A3, A2, A1, A0, A3x5 и т.д.)
+    handle: str = ""                        # Handle объекта в AutoCAD (устойчивый HEX-идентификатор)
+    dwg_path: str = ""                      # Полный путь к исходному DWG-файлу
+    dwg_name: str = ""                      # Имя файла чертежа (например "План.dwg")
+

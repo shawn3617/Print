@@ -1,0 +1,9 @@
+{
+  "printer": "DWG To PDF.pc3",
+  "plot_style": "monochrome.ctb",
+  "fallback_paper": "ISO без полей B5 (250.00 x 176.00 мм)",
+  "merge_mode": "В один файл (PDF)",
+  "open_after_print": true,
+  "sync_autocad": true,
+  "source_mode": "Листы (Layouts)"
+}

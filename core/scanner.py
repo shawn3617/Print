@@ -53,6 +53,21 @@ class DocumentScanner:
             except Exception as e:
                 print(f"Ошибка при согласовании масштабов: {e}")
 
+        # Заполняем информацию о чертеже (dwg_path, dwg_name)
+        doc_path = ""
+        doc_name = ""
+        try:
+            doc_path = getattr(doc, "FullName", "") or ""
+            doc_name = getattr(doc, "Name", "") or ""
+        except Exception:
+            pass
+
+        for f in all_frames:
+            if not f.dwg_path and doc_path:
+                f.dwg_path = doc_path
+            if not f.dwg_name and doc_name:
+                f.dwg_name = doc_name
+
         # Сортируем рамки по номеру листа (если возможно)
         def sort_key(frame):
             try:
@@ -63,3 +78,147 @@ class DocumentScanner:
                 
         all_frames.sort(key=sort_key)
         return all_frames
+
+
+    def scan_layouts(self, doc) -> List[Frame]:
+        """
+        Сканирует вкладки пространства листа (Layouts), исключая пространство модели (Model).
+        Возвращает список Frame для каждой вкладки, упорядоченный по визуальному порядку вкладок (TabOrder).
+        """
+        import re
+        from core.models import detect_format_from_media_name
+        
+        layout_frames = []
+        doc_path = ""
+        doc_name = ""
+        try:
+            doc_path = getattr(doc, "FullName", "") or ""
+            doc_name = getattr(doc, "Name", "") or ""
+        except Exception:
+            pass
+
+        try:
+            layouts = doc.Layouts
+            for i in range(layouts.Count):
+                layout = layouts.Item(i)
+                # Пропускаем пространство модели
+                if getattr(layout, "ModelType", False) or layout.Name.lower() == "model":
+                    continue
+                    
+                tab_order = getattr(layout, "TabOrder", i)
+                name = layout.Name
+                media_name = getattr(layout, "CanonicalMediaName", "")
+                handle = getattr(layout, "Handle", "")
+                obj_id = getattr(layout, "ObjectID", 0)
+                
+                # Определение формата бумаги по настройкам листа
+                paper_fmt = detect_format_from_media_name(media_name)
+                
+                # Номер листа: извлекаем число из названия вкладки, иначе tab_order
+                num_match = re.search(r'\d+', name)
+                sheet_num = num_match.group(0) if num_match else str(tab_order)
+                
+                frame = Frame(
+                    object_id=obj_id,
+                    sheet_number=sheet_num,
+                    sheet_name=name,
+                    min_point=(0.0, 0.0, 0.0),
+                    max_point=(0.0, 0.0, 0.0),
+                    source_type="Layout",
+                    paper_format=paper_fmt,
+                    handle=handle,
+                    dwg_path=doc_path,
+                    dwg_name=doc_name
+                )
+                layout_frames.append((tab_order, frame))
+
+                
+        except Exception as e:
+            print(f"Ошибка при сканировании Layouts: {e}")
+            
+        # Сортируем строго по TabOrder (порядок вкладок в интерфейсе AutoCAD)
+        layout_frames.sort(key=lambda x: x[0])
+        return [item[1] for item in layout_frames]
+
+    def scan_files(self, connector, file_paths: List[str], source_mode: str = "Модель", progress_callback=None, is_cancelled=None) -> List[Frame]:
+        """
+        Пакетное сканирование нескольких DWG-файлов.
+        Для каждого файла открывает чертеж в AutoCAD (если не открыт),
+        извлекает рамки или листы, и закрывает чертеж, если он был открыт процедурой.
+        
+        progress_callback: callable(current_file_idx, total_files, file_name, status_text)
+        is_cancelled: callable() -> bool
+        """
+        import os
+        
+        all_frames: List[Frame] = []
+        if not file_paths:
+            return all_frames
+            
+        # Запоминаем исходно открытые чертежи, чтобы случайно не закрыть файлы пользователя
+        initially_open_files = set()
+        try:
+            for full_path, _ in connector.get_open_documents():
+                if full_path:
+                    initially_open_files.add(os.path.abspath(full_path).lower())
+        except Exception:
+            pass
+            
+        initial_doc = getattr(connector, "doc", None)
+        total_files = len(file_paths)
+        is_layouts = "layout" in source_mode.lower() or "лист" in source_mode.lower()
+
+        for idx, fpath in enumerate(file_paths):
+            if is_cancelled and is_cancelled():
+                break
+                
+            abs_path = os.path.abspath(fpath)
+            fname = os.path.basename(abs_path)
+            
+            if progress_callback:
+                progress_callback(idx, total_files, fname, f"Открытие чертежа {idx + 1} из {total_files}: {fname}...")
+                
+            doc = None
+            was_opened = False
+            try:
+                doc, was_opened = connector.open_document(abs_path, read_only=True)
+                
+                if progress_callback:
+                    status_act = "Поиск листов (Layouts)" if is_layouts else "Поиск рамок чертежа"
+                    progress_callback(idx, total_files, fname, f"{status_act} ({idx + 1}/{total_files}): {fname}...")
+                    
+                if is_layouts:
+                    doc_frames = self.scan_layouts(doc)
+                else:
+                    doc_frames = self.scan_document(doc)
+                    
+                for fr in doc_frames:
+                    if not fr.dwg_path:
+                        fr.dwg_path = abs_path
+                    if not fr.dwg_name:
+                        fr.dwg_name = fname
+                        
+                all_frames.extend(doc_frames)
+                
+            except Exception as e:
+                print(f"Ошибка при обработке файла '{abs_path}': {e}")
+            finally:
+                # Закрываем чертеж только если мы его сами открыли и его изначально не было в AutoCAD
+                if doc and was_opened and abs_path.lower() not in initially_open_files:
+                    try:
+                        connector.close_document(doc, save_changes=False)
+                    except Exception:
+                        pass
+                        
+        if progress_callback:
+            progress_callback(total_files, total_files, "", "Сканирование завершено!")
+            
+        # По возможности возвращаем исходный активный документ
+        if initial_doc:
+            try:
+                connector.activate_document(initial_doc)
+            except Exception:
+                pass
+                
+        return all_frames
+
