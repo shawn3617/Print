@@ -62,7 +62,7 @@ class BlockParser(BaseParser):
                             min_point=min_pt,
                             max_point=max_pt,
                             source_type="Block",
-                            paper_format=detect_paper_format(w, h)
+                            paper_format=detect_paper_format(w, h, block_name)
                         )
                         frames.append(frame)
                     except Exception as e:

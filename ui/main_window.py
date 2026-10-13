@@ -93,7 +93,8 @@ class PrintManagerUI(QMainWindow):
         form_layout.addRow(QLabel("Принтер:"), self.combo_printers)
         
         self.combo_papers = QComboBox()
-        form_layout.addRow(QLabel("Формат:"), self.combo_papers)
+        self.combo_papers.setToolTip("Используется только если программа не смогла автоматически подобрать нужный размер бумаги для рамки (например, если в принтере нет такого формата)")
+        form_layout.addRow(QLabel("Резервный формат:"), self.combo_papers)
         
         self.combo_style = QComboBox()
         form_layout.addRow(QLabel("Стиль:"), self.combo_style)

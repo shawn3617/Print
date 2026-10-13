@@ -39,8 +39,10 @@ class BatchPrinter:
             return ["monochrome.ctb", "acad.ctb"]
 
     def _build_media_map(self, printer_name: str) -> dict:
-        """Строит словарь {формат (A0..A4) -> canonical_media_name} для выбранного принтера.
-        Ищет 'ISO full bleed' варианты, т.к. они печатают без полей."""
+        """Строит словарь {формат (A0..A4, A3x5 и т.д.) -> canonical_media_name} для выбранного принтера."""
+        import re
+        from core.models import ALL_FORMATS
+        
         result = {}
         try:
             layout = self.doc.ModelSpace.Layout
@@ -49,11 +51,37 @@ class BatchPrinter:
             names = layout.GetCanonicalMediaNames()
             for sys_name in names:
                 local_name = layout.GetLocaleMediaName(sys_name)
-                # Ищем формат ISO full bleed Ax
-                for fmt in ["A0", "A1", "A2", "A3", "A4"]:
-                    if fmt in local_name and "full bleed" in local_name.lower():
-                        result[fmt] = sys_name
-                        break
+                
+                # Извлекаем все числа из названия формата
+                nums = [float(x) for x in re.findall(r'\d+(?:\.\d+)?', local_name)]
+                dims = [n for n in nums if n >= 100] # Размеры бумаги всегда > 100 мм
+                
+                matched_fmt = None
+                
+                # Вариант 1: Размеры указаны прямо в имени (например, 1485 x 420)
+                if len(dims) >= 2:
+                    pw, ph = max(dims[-2:]), min(dims[-2:])
+                    for fmt, (fw, fh) in ALL_FORMATS.items():
+                        if abs(pw - max(fw, fh)) < 2 and abs(ph - min(fw, fh)) < 2:
+                            matched_fmt = fmt
+                            break
+                            
+                # Вариант 2: Имя формата просто содержит название ГОСТ (например, "A3x5")
+                if not matched_fmt:
+                    for fmt in ALL_FORMATS.keys():
+                        # Ищем точное совпадение (например "A3x5" или "A2")
+                        if re.search(r'\b' + re.escape(fmt) + r'\b', local_name, re.IGNORECASE):
+                            matched_fmt = fmt
+                            break
+                            
+                if matched_fmt:
+                    # Если формат найден, сохраняем. 
+                    # Но предпочитаем "full bleed" (без полей), если есть несколько вариантов
+                    is_full_bleed = "full bleed" in local_name.lower() or "без полей" in local_name.lower()
+                    
+                    if matched_fmt not in result or is_full_bleed:
+                        result[matched_fmt] = sys_name
+
         except Exception as e:
             print(f"Ошибка при построении media_map: {e}")
         return result
@@ -99,6 +127,27 @@ class BatchPrinter:
                 # Автоподбор формата бумаги по формату рамки
                 media_name = media_map.get(frame.paper_format, canonical_media_name)
                 layout.CanonicalMediaName = media_name
+                
+                # Подбор ориентации листа
+                is_paper_landscape = False
+                try:
+                    local_name = layout.GetLocaleMediaName(media_name)
+                    import re
+                    nums = [float(x) for x in re.findall(r'\d+(?:\.\d+)?', local_name)]
+                    dims = [n for n in nums if n >= 100]
+                    if len(dims) >= 2:
+                        paper_w, paper_h = dims[-2], dims[-1]
+                        is_paper_landscape = paper_w > paper_h
+                except:
+                    pass
+                frame_w = abs(frame.max_point[0] - frame.min_point[0])
+                frame_h = abs(frame.max_point[1] - frame.min_point[1])
+                is_frame_landscape = frame_w > frame_h
+                
+                if is_frame_landscape != is_paper_landscape:
+                    layout.PlotRotation = 1 # ac90degrees
+                else:
+                    layout.PlotRotation = 0 # ac0degrees
                 
                 p1 = win32com.client.VARIANT(
                     win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
