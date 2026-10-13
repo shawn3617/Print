@@ -5,5 +5,5 @@
   "merge_mode": "В один файл (PDF)",
   "open_after_print": true,
   "sync_autocad": true,
-  "source_mode": "Листы (Layouts)"
+  "source_mode": "Модель (Model Space)"
 }
