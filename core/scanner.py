@@ -10,19 +10,26 @@ class DocumentScanner:
     Агрегатор, который запускает все парсеры и собирает рамки со всего чертежа.
     """
     def __init__(self):
-        # Настраиваем парсеры
+        # Настраиваем парсеры: быстрый LISP-парсер СПДС первым
         self.parsers = [
-            BlockParser(block_names=["SHT_*", "Формат*"], sheet_attr_tags=["SHEET", "ЛИСТ"]),
             SPDSParser(),
+            BlockParser(block_names=["SHT_*", "Формат*"], sheet_attr_tags=["SHEET", "ЛИСТ"]),
             PolylineParser(target_layer="0000_Формат")
         ]
 
     def scan_document(self, doc) -> List[Frame]:
-        all_frames = []
+        import time
+        all_frames: List[Frame] = []
         for parser in self.parsers:
             try:
+                t_p0 = time.perf_counter()
                 frames = parser.find_frames(doc)
-                all_frames.extend(frames)
+                dt_p = time.perf_counter() - t_p0
+                print(f"[{parser.__class__.__name__}] завершен за {dt_p:.3f} сек (найдено {len(frames)} рамок)")
+                if frames:
+                    all_frames.extend(frames)
+                    # Если рамки обнаружены (например СПДС), завершаем поиск без холостых переборов
+                    break
             except Exception as e:
                 print(f"Ошибка при работе парсера {parser.__class__.__name__}: {e}")
         

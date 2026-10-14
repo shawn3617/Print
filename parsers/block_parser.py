@@ -14,6 +14,24 @@ class BlockParser(BaseParser):
 
     def find_frames(self, doc: Any) -> List[Frame]:
         frames = []
+        
+        # Быстрая проверка таблицы определений блоков (занимает 0.002 сек)
+        try:
+            blocks = doc.Blocks
+            has_matching_def = False
+            for b_idx in range(blocks.Count):
+                b_name = getattr(blocks.Item(b_idx), 'Name', '').lower()
+                for pattern in self.block_names:
+                    if fnmatch.fnmatch(b_name, pattern):
+                        has_matching_def = True
+                        break
+                if has_matching_def:
+                    break
+            if not has_matching_def:
+                return frames
+        except Exception:
+            pass
+
         model_space = doc.ModelSpace
         for i in range(model_space.Count):
             obj = model_space.Item(i)

@@ -25,6 +25,20 @@ class PolylineParser(BaseParser):
 
     def find_frames(self, doc: Any) -> List[Frame]:
         frames = []
+        
+        # Быстрая проверка таблицы слоев (занимает 0.001 сек)
+        try:
+            layers = doc.Layers
+            layer_found = False
+            for lay_idx in range(layers.Count):
+                if getattr(layers.Item(lay_idx), 'Name', '').lower() == self.target_layer:
+                    layer_found = True
+                    break
+            if not layer_found:
+                return frames
+        except Exception:
+            pass
+
         model_space = doc.ModelSpace
         
         # 1. Собираем все полилинии и тексты с нужного слоя за один проход

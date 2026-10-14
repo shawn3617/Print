@@ -14,7 +14,7 @@
                  key nil))))
   (reverse res))
 
-;; Экранирование строк для формата JSON по ASCII кодам
+;; Экранирование строк для формата JSON
 (defun sht-escape-json (s / i c a res)
   (if (/= (type s) 'STR)
     ""
@@ -25,19 +25,21 @@
         (setq c (substr s i 1)
               a (ascii c))
         (cond
-          ((= a 92) (setq res (strcat res (chr 92) (chr 92))))  ;; Backslash
-          ((= a 34) (setq res (strcat res (chr 92) (chr 34))))  ;; Quote
-          ((= a 10) (setq res (strcat res " ")))              ;; Newline
-          ((= a 13) (setq res (strcat res " ")))              ;; Carriage return
-          ((= a 9)  (setq res (strcat res " ")))              ;; Tab
-          ((< a 32) (setq res (strcat res " ")))              ;; Control chars
+          ((= a 92) (setq res (strcat res "\\\\")))
+          ((= a 34) (setq res (strcat res "\\\"")))
+          ((= a 10) (setq res (strcat res " ")))
+          ((= a 13) (setq res (strcat res " ")))
+          ((= a 9)  (setq res (strcat res " ")))
+          ((and (> a 0) (< a 32)) (setq res (strcat res " ")))
           (t        (setq res (strcat res c))))
         (setq i (1+ i)))
       res)))
 
 ;; Форматирование вещественного числа с точкой
 (defun sht-num-to-str (n)
-  (vl-string-translate "," "." (rtos (float n) 2 4)))
+  (if (null n)
+    "0.0"
+    (vl-string-translate "," "." (rtos (float n) 2 4))))
 
 ;; Основная функция экспорта всех СПДС-рамок в JSON файл
 (defun sht-export-spds (filepath / ss i en ed dat hdl sh-num sh-name shifr fmt mult sc ori min-pt max-pt o r mn mx ox oy fp first)
@@ -126,18 +128,18 @@
                 (setq first nil)
                 
                 (write-line "  {" fp)
-                (write-line (strcat "    "handle": "" (sht-escape-json hdl) "",") fp)
-                (write-line (strcat "    "sheet_number": "" (sht-escape-json sh-num) "",") fp)
-                (write-line (strcat "    "sheet_name": "" (sht-escape-json sh-name) "",") fp)
-                (write-line (strcat "    "shifr": "" (sht-escape-json shifr) "",") fp)
-                (write-line (strcat "    "format": "" (sht-escape-json fmt) "",") fp)
-                (write-line (strcat "    "multiplicity": " (itoa mult) ",") fp)
-                (write-line (strcat "    "scale": " (sht-num-to-str sc) ",") fp)
-                (write-line (strcat "    "orientation": "" (sht-escape-json ori) "",") fp)
-                (write-line (strcat "    "min_x": " (sht-num-to-str (car min-pt)) ",") fp)
-                (write-line (strcat "    "min_y": " (sht-num-to-str (cadr min-pt)) ",") fp)
-                (write-line (strcat "    "max_x": " (sht-num-to-str (car max-pt)) ",") fp)
-                (write-line (strcat "    "max_y": " (sht-num-to-str (cadr max-pt))) fp)
+                (write-line (strcat "    \"handle\": \"" (sht-escape-json hdl) "\",") fp)
+                (write-line (strcat "    \"sheet_number\": \"" (sht-escape-json sh-num) "\",") fp)
+                (write-line (strcat "    \"sheet_name\": \"" (sht-escape-json sh-name) "\",") fp)
+                (write-line (strcat "    \"shifr\": \"" (sht-escape-json shifr) "\",") fp)
+                (write-line (strcat "    \"format\": \"" (sht-escape-json fmt) "\",") fp)
+                (write-line (strcat "    \"multiplicity\": " (itoa mult) ",") fp)
+                (write-line (strcat "    \"scale\": " (sht-num-to-str sc) ",") fp)
+                (write-line (strcat "    \"orientation\": \"" (sht-escape-json ori) "\",") fp)
+                (write-line (strcat "    \"min_x\": " (sht-num-to-str (car min-pt)) ",") fp)
+                (write-line (strcat "    \"min_y\": " (sht-num-to-str (cadr min-pt)) ",") fp)
+                (write-line (strcat "    \"max_x\": " (sht-num-to-str (car max-pt)) ",") fp)
+                (write-line (strcat "    \"max_y\": " (sht-num-to-str (cadr max-pt))) fp)
                 (write-line "  }" fp)
               )
             )
