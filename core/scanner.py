@@ -209,6 +209,8 @@ class DocumentScanner:
                 if doc and was_opened and abs_path.lower() not in initially_open_files:
                     try:
                         connector.close_document(doc, save_changes=False)
+                        import time
+                        time.sleep(0.3)
                     except Exception:
                         pass
                         

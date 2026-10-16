@@ -10,7 +10,8 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QPushButton, QComboBox,
     QLabel, QHeaderView, QCheckBox, QGroupBox, QFormLayout,
-    QMessageBox, QFileDialog, QAbstractItemView, QDialog, QProgressBar
+    QMessageBox, QFileDialog, QAbstractItemView, QDialog, QProgressBar,
+    QLineEdit
 )
 from PySide6.QtCore import Qt, Signal, QMimeData
 from PySide6.QtGui import QDrag
@@ -20,6 +21,7 @@ from core.scanner import DocumentScanner
 from core.printer import BatchPrinter, PrintCancelledError
 from core.config_manager import ConfigManager
 from core.models import natural_sheet_sort_key
+from core.exporter import SheetExporter
 
 
 class ReorderableTableWidget(QTableWidget):
@@ -206,6 +208,8 @@ class PrintManagerUI(QMainWindow):
             QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; }
             QComboBox { background-color: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 5px; font-size: 14px; }
             QComboBox::drop-down { border: none; }
+            QLineEdit { background-color: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+            QLineEdit:focus { border: 1px solid #89b4fa; }
             QCheckBox { color: #cdd6f4; font-size: 13px; spacing: 6px; }
             QCheckBox::indicator { width: 16px; height: 16px; }
             QPushButton { background-color: #89b4fa; color: #11111b; border: none; border-radius: 6px; padding: 10px 20px; font-size: 14px; font-weight: bold; }
@@ -287,6 +291,37 @@ class PrintManagerUI(QMainWindow):
         batch_bar.addStretch()
         left_layout.addLayout(batch_bar)
 
+        # Панель фильтрации и быстрого поиска
+        filter_bar = QHBoxLayout()
+        filter_bar.setSpacing(8)
+
+        lbl_filter = QLabel("Поиск:")
+        lbl_filter.setStyleSheet("font-weight: bold; color: #89b4fa;")
+        filter_bar.addWidget(lbl_filter)
+
+        self.txt_search = QLineEdit()
+        self.txt_search.setPlaceholderText("Номер, название или чертеж...")
+        self.txt_search.setClearButtonEnabled(True)
+        self.txt_search.textChanged.connect(self.apply_filter)
+        filter_bar.addWidget(self.txt_search, stretch=3)
+
+        lbl_fmt = QLabel("Формат:")
+        lbl_fmt.setStyleSheet("font-weight: bold; color: #89b4fa;")
+        filter_bar.addWidget(lbl_fmt)
+
+        self.combo_filter_format = QComboBox()
+        self.combo_filter_format.addItem("Все форматы")
+        self.combo_filter_format.currentIndexChanged.connect(self.apply_filter)
+        filter_bar.addWidget(self.combo_filter_format, stretch=1)
+
+        self.btn_reset_filter = QPushButton("✕ Сброс")
+        self.btn_reset_filter.setProperty("cssClass", "btn_tool")
+        self.btn_reset_filter.setToolTip("Сбросить поиск и фильтр по форматам")
+        self.btn_reset_filter.clicked.connect(self.reset_filter)
+        filter_bar.addWidget(self.btn_reset_filter)
+
+        left_layout.addLayout(filter_bar)
+
         self.table = ReorderableTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(["Печать", "Лист", "Название листа", "Формат", "Чертеж", "Источник"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -326,17 +361,23 @@ class PrintManagerUI(QMainWindow):
         btn_sort_num.clicked.connect(self.sort_by_sheet_number)
         table_tools.addWidget(btn_sort_num)
 
-        btn_move_up = QPushButton("▲ Вверх (Ctrl+↑)")
-        btn_move_up.setProperty("cssClass", "btn_tool")
-        btn_move_up.setToolTip("Поднять выбранный лист выше в очереди печати")
-        btn_move_up.clicked.connect(self.move_row_up)
-        table_tools.addWidget(btn_move_up)
+        btn_export = QPushButton("В Excel / CSV...")
+        btn_export.setProperty("cssClass", "btn_tool")
+        btn_export.setToolTip("Экспортировать ведомость листов таблицы в Excel (.xlsx) или CSV")
+        btn_export.clicked.connect(self.export_sheet_list_dialog)
+        table_tools.addWidget(btn_export)
 
-        btn_move_down = QPushButton("▼ Вниз (Ctrl+↓)")
-        btn_move_down.setProperty("cssClass", "btn_tool")
-        btn_move_down.setToolTip("Опустить выбранный лист ниже в очереди печати")
-        btn_move_down.clicked.connect(self.move_row_down)
-        table_tools.addWidget(btn_move_down)
+        self.btn_move_up = QPushButton("▲ Вверх (Ctrl+↑)")
+        self.btn_move_up.setProperty("cssClass", "btn_tool")
+        self.btn_move_up.setToolTip("Поднять выбранный лист выше в очереди печати")
+        self.btn_move_up.clicked.connect(self.move_row_up)
+        table_tools.addWidget(self.btn_move_up)
+
+        self.btn_move_down = QPushButton("▼ Вниз (Ctrl+↓)")
+        self.btn_move_down.setProperty("cssClass", "btn_tool")
+        self.btn_move_down.setToolTip("Опустить выбранный лист ниже в очереди печати")
+        self.btn_move_down.clicked.connect(self.move_row_down)
+        table_tools.addWidget(self.btn_move_down)
 
         table_tools.addStretch()
 
@@ -519,6 +560,8 @@ class PrintManagerUI(QMainWindow):
             self.connector.clear_highlight()
         except Exception:
             pass
+        self.update_format_filter_items()
+        self.apply_filter()
         self.update_print_counter()
 
     def process_batch_dwg_files(self, file_paths):
@@ -577,6 +620,8 @@ class PrintManagerUI(QMainWindow):
             # Выполняем сквозную сортировку по номерам листов для всего общего списка чертежей
             self.sort_by_sheet_number()
             self.refresh_document_status()
+            self.update_format_filter_items()
+            self.apply_filter()
 
             QMessageBox.information(
                 self,
@@ -701,9 +746,9 @@ class PrintManagerUI(QMainWindow):
                     )
             finally:
                 self._is_updating_table = False
-                
-            self.btn_print.setText(f"ПЕЧАТЬ ({len(self.frames)} листов)")
-            self.btn_print.setEnabled(len(self.frames) > 0)
+
+            self.update_format_filter_items()
+            self.apply_filter()
             
             if not self.frames:
                 msg = "Вкладки листов (Layouts) не найдены!" if is_layouts_mode else "Рамки не найдены!"
@@ -755,15 +800,151 @@ class PrintManagerUI(QMainWindow):
         self.table.setItem(row, 4, item_dwg)
         self.table.setItem(row, 5, item_src)
         
+    def is_filter_active(self) -> bool:
+        """Возвращает True, если активен поиск по тексту или выбран конкретный формат."""
+        if not hasattr(self, 'txt_search') or not hasattr(self, 'combo_filter_format'):
+            return False
+        search_text = self.txt_search.text().strip()
+        fmt_idx = self.combo_filter_format.currentIndex()
+        return bool(search_text) or (fmt_idx > 0)
+
+    def update_format_filter_items(self):
+        """Обновляет выпадающий список форматов в комбобоксе фильтра на основе текущих рамок."""
+        if not hasattr(self, 'combo_filter_format'):
+            return
+        cur_fmt = self.combo_filter_format.currentText()
+        if " (" in cur_fmt:
+            cur_fmt = cur_fmt.split(" (")[0].strip()
+
+        self.combo_filter_format.blockSignals(True)
+        self.combo_filter_format.clear()
+
+        counts = {}
+        for f in self.frames:
+            fmt = f.paper_format or "Не определен"
+            counts[fmt] = counts.get(fmt, 0) + 1
+
+        def format_sort_key(name):
+            import re
+            m = re.match(r'A(\d+)', name, re.IGNORECASE)
+            if m:
+                return (0, int(m.group(1)), name)
+            return (1, 0, name)
+
+        sorted_formats = sorted(counts.keys(), key=format_sort_key)
+        total_count = len(self.frames)
+        self.combo_filter_format.addItem(f"Все форматы ({total_count})")
+
+        selected_idx = 0
+        for i, fmt in enumerate(sorted_formats):
+            label = f"{fmt} ({counts[fmt]})"
+            self.combo_filter_format.addItem(label)
+            if fmt == cur_fmt:
+                selected_idx = i + 1
+
+        self.combo_filter_format.setCurrentIndex(selected_idx)
+        self.combo_filter_format.blockSignals(False)
+
+    def apply_filter(self):
+        """Фильтрует строки таблицы на лету по поисковому запросу и выбранному формату."""
+        if not hasattr(self, 'txt_search') or not hasattr(self, 'combo_filter_format'):
+            return
+        search_text = self.txt_search.text().strip().lower()
+        cur_fmt = self.combo_filter_format.currentText()
+        selected_format = None
+        if self.combo_filter_format.currentIndex() > 0:
+            selected_format = cur_fmt.split(" (")[0].strip()
+
+        for r in range(self.table.rowCount()):
+            if r >= len(self.frames):
+                break
+            frame = self.frames[r]
+
+            match_fmt = True
+            if selected_format:
+                match_fmt = (frame.paper_format == selected_format)
+
+            match_text = True
+            if search_text:
+                num_str = str(frame.sheet_number or "").lower()
+                name_str = str(frame.sheet_name or "").lower()
+                fmt_str = str(frame.paper_format or "").lower()
+                dwg_str = str(frame.dwg_name or "").lower()
+                match_text = (
+                    search_text in num_str or
+                    search_text in name_str or
+                    search_text in fmt_str or
+                    search_text in dwg_str
+                )
+
+            visible = match_fmt and match_text
+            self.table.setRowHidden(r, not visible)
+
+        filter_active = self.is_filter_active()
+        if hasattr(self, 'btn_move_up') and hasattr(self, 'btn_move_down'):
+            self.btn_move_up.setEnabled(not filter_active)
+            self.btn_move_down.setEnabled(not filter_active)
+            if filter_active:
+                self.btn_move_up.setToolTip("Сбросьте поиск/фильтр для ручного перемещения строк")
+                self.btn_move_down.setToolTip("Сбросьте поиск/фильтр для ручного перемещения строк")
+                self.table.setDragEnabled(False)
+            else:
+                self.btn_move_up.setToolTip("Поднять выбранный лист выше в очереди печати")
+                self.btn_move_down.setToolTip("Опустить выбранный лист ниже в очереди печати")
+                self.table.setDragEnabled(True)
+
+        self.update_print_counter()
+
+    def reset_filter(self):
+        """Сбрасывает поисковую строку и восстанавливает показ всех форматов."""
+        if hasattr(self, 'txt_search'):
+            self.txt_search.blockSignals(True)
+            self.txt_search.clear()
+            self.txt_search.blockSignals(False)
+        if hasattr(self, 'combo_filter_format'):
+            self.combo_filter_format.blockSignals(True)
+            self.combo_filter_format.setCurrentIndex(0)
+            self.combo_filter_format.blockSignals(False)
+
+        for r in range(self.table.rowCount()):
+            self.table.setRowHidden(r, False)
+
+        if hasattr(self, 'btn_move_up') and hasattr(self, 'btn_move_down'):
+            self.btn_move_up.setEnabled(True)
+            self.btn_move_down.setEnabled(True)
+            self.btn_move_up.setToolTip("Поднять выбранный лист выше в очереди печати")
+            self.btn_move_down.setToolTip("Опустить выбранный лист ниже в очереди печати")
+            self.table.setDragEnabled(True)
+
+        self.update_print_counter()
+
+    def get_frames_to_print(self) -> list:
+        """Возвращает список рамок, отмеченных галочкой и видимых в таблице."""
+        selected = []
+        for i in range(self.table.rowCount()):
+            if not self.table.isRowHidden(i):
+                chk_widget = self.table.cellWidget(i, 0)
+                if chk_widget:
+                    chk = chk_widget.layout().itemAt(0).widget()
+                    if chk.isChecked() and i < len(self.frames):
+                        selected.append(self.frames[i])
+        return selected
+
     def update_print_counter(self):
         count = 0
+        total_visible = 0
         for i in range(self.table.rowCount()):
-            chk_widget = self.table.cellWidget(i, 0)
-            if chk_widget:
-                chk = chk_widget.layout().itemAt(0).widget()
-                if chk.isChecked():
-                    count += 1
-        self.btn_print.setText(f"ПЕЧАТЬ ({count} листов)")
+            if not self.table.isRowHidden(i):
+                total_visible += 1
+                chk_widget = self.table.cellWidget(i, 0)
+                if chk_widget:
+                    chk = chk_widget.layout().itemAt(0).widget()
+                    if chk.isChecked():
+                        count += 1
+        if self.is_filter_active():
+            self.btn_print.setText(f"ПЕЧАТЬ ({count} из {total_visible} листов)")
+        else:
+            self.btn_print.setText(f"ПЕЧАТЬ ({count} листов)")
         self.btn_print.setEnabled(count > 0)
 
     def is_row_checked(self, row: int) -> bool:
@@ -774,27 +955,35 @@ class PrintManagerUI(QMainWindow):
         return True
 
     def on_key_move_requested(self, direction: int):
+        if self.is_filter_active():
+            return
         if direction < 0:
             self.move_row_up()
         else:
             self.move_row_down()
 
     def move_row_up(self):
+        if self.is_filter_active():
+            return
         row = self.table.currentRow()
         if row > 0:
             self.move_row(row, row - 1)
 
     def move_row_down(self):
+        if self.is_filter_active():
+            return
         row = self.table.currentRow()
         if 0 <= row < self.table.rowCount() - 1:
             self.move_row(row, row + 1)
 
     def on_row_drag_moved(self, from_row: int, to_row: int):
+        if self.is_filter_active():
+            return
         if from_row != to_row:
             self.move_row(from_row, to_row)
 
     def move_row(self, from_row: int, to_row: int):
-        if from_row == to_row or not self.frames:
+        if self.is_filter_active() or from_row == to_row or not self.frames:
             return
         if not (0 <= from_row < len(self.frames) and 0 <= to_row < len(self.frames)):
             return
@@ -830,14 +1019,15 @@ class PrintManagerUI(QMainWindow):
 
         # 4. Выделяем строку на новом месте
         self.table.selectRow(to_row)
-        self.update_print_counter()
+        self.apply_filter()
 
     def select_all_rows(self, checked: bool = True):
         for i in range(self.table.rowCount()):
-            chk_widget = self.table.cellWidget(i, 0)
-            if chk_widget:
-                chk = chk_widget.layout().itemAt(0).widget()
-                chk.setChecked(checked)
+            if not self.table.isRowHidden(i):
+                chk_widget = self.table.cellWidget(i, 0)
+                if chk_widget:
+                    chk = chk_widget.layout().itemAt(0).widget()
+                    chk.setChecked(checked)
         self.update_print_counter()
 
     def sort_by_sheet_number(self):
@@ -853,8 +1043,6 @@ class PrintManagerUI(QMainWindow):
             dwg_part = frame.dwg_name.lower() if frame.dwg_name else ""
             return (natural_sheet_sort_key(frame.sheet_number), dwg_part)
 
-
-                
         pairs.sort(key=sort_key)
         self.frames = [p[0] for p in pairs]
         checked_states = [p[1] for p in pairs]
@@ -873,7 +1061,7 @@ class PrintManagerUI(QMainWindow):
                 )
         finally:
             self._is_updating_table = False
-        self.update_print_counter()
+        self.apply_filter()
 
 
     def on_table_cell_changed(self, current_row: int, current_column: int, previous_row: int, previous_column: int):
@@ -908,6 +1096,39 @@ class PrintManagerUI(QMainWindow):
         else:
             QMessageBox.information(self, "Информация", "Выберите лист в таблице, чтобы показать его в AutoCAD.")
 
+    def export_sheet_list_dialog(self):
+        if not self.frames:
+            QMessageBox.information(self, "Экспорт ведомости", "Список листов пуст. Сначала выполните поиск рамок.")
+            return
+
+        # Если активен фильтр, собираем только видимые листы
+        export_frames = []
+        for i in range(self.table.rowCount()):
+            if not self.table.isRowHidden(i) and i < len(self.frames):
+                export_frames.append(self.frames[i])
+
+        if not export_frames:
+            export_frames = self.frames
+
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Сохранить ведомость листов",
+            "Ведомость_листов.xlsx",
+            "Книга Excel (*.xlsx);;CSV (разделители - точки с запятой) (*.csv)"
+        )
+        if not filepath:
+            return
+
+        try:
+            SheetExporter.export(export_frames, filepath)
+            QMessageBox.information(
+                self,
+                "Экспорт завершен",
+                f"Ведомость листов ({len(export_frames)} поз.) успешно сохранена в:\n{filepath}"
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка экспорта", f"Не удалось сохранить файл:\n{e}")
+
     def closeEvent(self, event):
         try:
             self.save_settings()
@@ -928,15 +1149,10 @@ class PrintManagerUI(QMainWindow):
         else:
             self.printer.connector = self.connector
 
-        # 1. Собираем выбранные рамки
-        selected_frames = []
-        for i in range(self.table.rowCount()):
-            chk_widget = self.table.cellWidget(i, 0)
-            chk = chk_widget.layout().itemAt(0).widget()
-            if chk.isChecked():
-                selected_frames.append(self.frames[i])
-                
+        # 1. Собираем выбранные рамки (с учетом видимости фильтра)
+        selected_frames = self.get_frames_to_print()
         if not selected_frames:
+            QMessageBox.information(self, "Печать", "Нет выбранных листов для печати (отметьте нужные листы чекбоксами).")
             return
             
         merge_pdf = (self.combo_mode.currentIndex() == 1)

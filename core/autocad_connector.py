@@ -1,6 +1,7 @@
 import os
 import win32com.client
 import pythoncom
+from core.com_utils import com_retry
 
 class AutoCADConnector:
     """
@@ -54,7 +55,7 @@ class AutoCADConnector:
         norm_target = os.path.abspath(filepath_or_name).lower() if os.path.isabs(filepath_or_name) else filepath_or_name.lower()
         target_basename = os.path.basename(filepath_or_name).lower()
         
-        try:
+        def _check():
             docs = self.app.Documents
             for i in range(docs.Count):
                 try:
@@ -68,10 +69,13 @@ class AutoCADConnector:
                         return d
                 except Exception:
                     continue
+            return None
+
+        try:
+            return com_retry(_check, max_attempts=15, delay=0.25)
         except Exception as e:
-            print(f"Ошибка при поиске открытого документа: {e}")
-            
-        return None
+            print(f"Предупреждение при поиске открытого документа: {e}")
+            return None
 
     def get_open_documents(self):
         """
@@ -80,17 +84,22 @@ class AutoCADConnector:
         result = []
         if not self.app:
             return result
-        try:
+
+        def _fetch():
+            res = []
             docs = self.app.Documents
             for i in range(docs.Count):
                 try:
                     d = docs.Item(i)
-                    result.append((getattr(d, "FullName", ""), getattr(d, "Name", "")))
+                    res.append((getattr(d, "FullName", ""), getattr(d, "Name", "")))
                 except Exception:
                     continue
+            return res
+
+        try:
+            return com_retry(_fetch, max_attempts=10, delay=0.25)
         except Exception:
-            pass
-        return result
+            return []
 
     def open_document(self, filepath: str, read_only: bool = True):
         """
@@ -110,8 +119,11 @@ class AutoCADConnector:
             self.doc = existing_doc
             return existing_doc, False
 
-        # Открываем через коллекцию Documents
-        doc = self.app.Documents.Open(abs_path, read_only)
+        # Открываем через коллекцию Documents с защитой от временной занятости AutoCAD
+        def _do_open():
+            return self.app.Documents.Open(abs_path, read_only)
+
+        doc = com_retry(_do_open, max_attempts=20, delay=0.35)
         self.doc = doc
         return doc, True
 
@@ -121,8 +133,12 @@ class AutoCADConnector:
         """
         if not doc:
             return
-        try:
+
+        def _do_close():
             doc.Close(save_changes)
+
+        try:
+            com_retry(_do_close, max_attempts=15, delay=0.25)
         except Exception as e:
             print(f"Предупреждение при закрытии документа: {e}")
         finally:
@@ -138,8 +154,12 @@ class AutoCADConnector:
         """
         if not doc:
             return
-        try:
+
+        def _do_activate():
             self.app.ActiveDocument = doc
+
+        try:
+            com_retry(_do_activate, max_attempts=15, delay=0.25)
             self.doc = doc
         except Exception as e:
             print(f"Предупреждение: не удалось активировать документ: {e}")

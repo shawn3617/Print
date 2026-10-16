@@ -1,11 +1,13 @@
 (vl-load-com)
 
 ;;; ==========================================================================
-;;;  spds_export.lsp -- быстрый экспорт СПДС рамок чертежа в JSON
-;;;  Основан на алгоритмах SHEETS.lsp (c:SHEET_FROM_SPDS / sht:spds-data)
+;;;  spds_export.lsp -- Быстрый экспорт СПДС рамок чертежа в JSON
+;;;  Основано на алгоритмах SHEETS.lsp (c:SHEET_FROM_SPDS / sht:spds-data)
+;;;  Поддерживает различные типы СПДС-штампов (ГОСТ 21.101-97, 21.101-2020,
+;;;  формы 3, 4, 5, 6, многострочные наименования DrawingName1..N, Name 1..N и т.д.)
 ;;; ==========================================================================
 
-;; Чтение полей СПДС из ассоциативного списка DXF (группа 301 + значение)
+;; Чтение и парсинг ассоциативного списка DXF (группы 301 + значение)
 (defun sht-spds-data (ed / key res)
   (foreach g ed
     (cond ((= (car g) 301) (setq key (cdr g)))
@@ -14,7 +16,58 @@
                  key nil))))
   (reverse res))
 
-;; Экранирование строк для формата JSON
+;; Проверка значения на непустоту (не nil, не пустая строка, не пробелы)
+(defun sht-nonempty-str (v / s)
+  (if (null v)
+    nil
+    (progn
+      (setq s (vl-princ-to-string v))
+      (setq s (vl-string-trim " \t\r\n" s))
+      (if (and (/= s "") (/= s "nil"))
+        s
+        nil))))
+
+;; Поиск значения по ключу в alist без учета регистра
+(defun sht-get-val (target-key alist / t-up found val)
+  (setq t-up (strcase target-key)
+        found nil)
+  (foreach pair alist
+    (if (and (null found)
+             (or (= (car pair) target-key)
+                 (= (car pair) t-up)
+                 (= (strcase (car pair)) t-up)))
+      (progn
+        (setq val (sht-nonempty-str (cdr pair)))
+        (if val (setq found val)))))
+  found)
+
+;; Поиск первого непустого значения по списку ключей
+(defun sht-find-first (keys alist / res k)
+  (setq res nil)
+  (while (and keys (null res))
+    (setq k (car keys)
+          keys (cdr keys)
+          res (sht-get-val k alist)))
+  res)
+
+;; Сборка многострочного текста по префиксам (например DrawingName1..N, Name 1..N)
+(defun sht-collect-multiline (prefix-list max-lines alist / full p i k val)
+  (setq full "")
+  (foreach p prefix-list
+    (if (= full "")
+      (progn
+        (setq i 1)
+        (while (<= i max-lines)
+          (setq k (strcat p (itoa i)))
+          (setq val (sht-get-val k alist))
+          (if val
+            (if (= full "")
+              (setq full val)
+              (setq full (strcat full " " val))))
+          (setq i (1+ i))))))
+  (if (/= full "") full nil))
+
+;; Экранирование строк в формат JSON
 (defun sht-escape-json (s / i c a res)
   (if (/= (type s) 'STR)
     ""
@@ -26,7 +79,7 @@
               a (ascii c))
         (cond
           ((= a 92) (setq res (strcat res "\\\\")))
-          ((= a 34) (setq res (strcat res "\\\"")))
+          ((= a 34) (setq res (strcat res "\\"")))
           ((= a 10) (setq res (strcat res " ")))
           ((= a 13) (setq res (strcat res " ")))
           ((= a 9)  (setq res (strcat res " ")))
@@ -41,7 +94,7 @@
     "0.0"
     (vl-string-translate "," "." (rtos (float n) 2 4))))
 
-;; Основная функция экспорта всех СПДС-рамок в JSON файл
+;; Основная функция экспорта СПДС-рамок в JSON файл
 (defun sht-export-spds (filepath / ss i en ed dat hdl sh-num sh-name shifr fmt mult sc ori min-pt max-pt o r mn mx ox oy fp first)
   (setq ss (ssget "_X" '((0 . "SPDSFORMAT,*MCS*,*SPDB*"))))
   (setq fp (open filepath "w"))
@@ -62,30 +115,33 @@
                 (setq dat (sht-spds-data ed))
                 (setq hdl (cond ((cdr (assoc 5 ed))) ("")))
                 
-                ;; Номер листа
-                (setq sh-num (cond ((cdr (assoc "Sheet" dat)))
-                                   ((cdr (assoc "Лист" dat)))
-                                   ("Unknown")))
-                (if (numberp sh-num) (setq sh-num (itoa (fix sh-num))))
+                ;; 1. Номер листа (проверяем все варианты названий полей)
+                (setq sh-num (sht-find-first
+                               '("Лист" "Sheet" "PageNumber" "Page" "Номер листа" "НомерЛиста" "SH_NUM" "NUM" "Number" "Лист1" "Sheet1")
+                               dat))
+                (if (null sh-num) (setq sh-num "Unknown"))
                 
-                ;; Название листа
-                (setq sh-name (cond ((cdr (assoc "Drawing type" dat)))
-                                    ((cdr (assoc "DrawingName1" dat)))
-                                    ((cdr (assoc "ComplexName" dat)))
-                                    ((cdr (assoc "TITLE" dat)))
-                                    ("")))
-                (if (numberp sh-name) (setq sh-name (vl-princ-to-string sh-name)))
+                ;; 2. Наименование листа (сначала многострочные поля, затем одиночные)
+                (setq sh-name (sht-collect-multiline
+                                '("DrawingName" "Name " "Name" "Наименование " "Наименование" "Название " "Название")
+                                9
+                                dat))
+                (if (null sh-name)
+                  (setq sh-name (sht-find-first
+                                  '("Drawing type" "DrawingName" "ComplexName" "TITLE" "Title" "Наименование" "Название" "Name" "Description" "Subject")
+                                  dat)))
+                (if (null sh-name) (setq sh-name ""))
                 
-                ;; Обозначение / Шифр
-                (setq shifr (cond ((cdr (assoc "Designation" dat))) ("")))
-                (if (numberp shifr) (setq shifr (vl-princ-to-string shifr)))
+                ;; 3. Обозначение / Шифр
+                (setq shifr (sht-find-first '("Designation" "Обозначение" "Шифр" "Code" "DocCode") dat))
+                (if (null shifr) (setq shifr ""))
                 
-                ;; Формат
-                (setq fmt (cond ((cdr (assoc "Format" dat))) ("")))
-                (if (numberp fmt) (setq fmt (vl-princ-to-string fmt)))
+                ;; 4. Формат
+                (setq fmt (sht-find-first '("Format" "Формат") dat))
+                (if (null fmt) (setq fmt ""))
                 
-                ;; Кратность
-                (setq mult (cdr (assoc "Multiplicity" dat)))
+                ;; 5. Кратность
+                (setq mult (sht-find-first '("Multiplicity" "Кратность") dat))
                 (cond
                   ((null mult) (setq mult 1))
                   ((numberp mult) (setq mult (fix mult)))
@@ -93,8 +149,8 @@
                   (t (setq mult 1)))
                 (if (< mult 1) (setq mult 1))
                 
-                ;; Масштаб
-                (setq sc (cdr (assoc "Scale" dat)))
+                ;; 6. Масштаб
+                (setq sc (sht-find-first '("Scale" "Масштаб") dat))
                 (cond
                   ((null sc) (setq sc (cdr (assoc 48 ed))))
                   ((numberp sc) (setq sc (float sc)))
@@ -102,21 +158,21 @@
                   (t (setq sc 1.0)))
                 (if (not (and (numberp sc) (> sc 0))) (setq sc 1.0))
                 
-                ;; Ориентация
-                (setq ori (cond ((cdr (assoc "Orientation" dat))) ("")))
-                (if (numberp ori) (setq ori (vl-princ-to-string ori)))
+                ;; 7. Ориентация
+                (setq ori (sht-find-first '("Orientation" "Ориентация") dat))
+                (if (null ori) (setq ori ""))
                 
-                ;; Габариты (BoundingBox)
+                ;; 8. Габариты (BoundingBox)
                 (setq o (vlax-ename->vla-object en)
                       min-pt '(0.0 0.0 0.0)
                       max-pt '(0.0 0.0 0.0)
                       r (vl-catch-all-apply 'vla-GetBoundingBox (list o 'mn 'mx)))
                 (if (vl-catch-all-error-p r)
                   (progn
-                    (setq ox (cond ((cdr (assoc "OriginX" dat))) (0.0))
-                          oy (cond ((cdr (assoc "OriginY" dat))) (0.0)))
-                    (if (numberp ox) (setq ox (float ox)) (setq ox (distof (vl-princ-to-string ox))))
-                    (if (numberp oy) (setq oy (float oy)) (setq oy (distof (vl-princ-to-string oy))))
+                    (setq ox (sht-find-first '("OriginX") dat)
+                          oy (sht-find-first '("OriginY") dat))
+                    (if (numberp ox) (setq ox (float ox)) (if ox (setq ox (distof (vl-princ-to-string ox)))))
+                    (if (numberp oy) (setq oy (float oy)) (if oy (setq oy (distof (vl-princ-to-string oy)))))
                     (if (null ox) (setq ox 0.0))
                     (if (null oy) (setq oy 0.0))
                     (setq min-pt (list ox oy 0.0)

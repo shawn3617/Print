@@ -1,30 +1,15 @@
 import os
+import logging
 import win32com.client
+
+logging.getLogger("pypdf").setLevel(logging.ERROR)
 
 class PrintCancelledError(Exception):
     """Исключение, возникающее при отмене печати пользователем."""
     pass
 
 
-def com_retry(func, max_attempts=15, delay=0.5):
-    """
-    Выполняет COM-вызов с повторными попытками при ошибке RPC_E_CALL_REJECTED (0x80010001 / -2147418111)
-    или RPC_E_SERVERCALL_RETRYLATER (0x8001010A / -2147417846), когда AutoCAD временно занят переключением.
-    """
-    import time
-    for attempt in range(max_attempts):
-        try:
-            return func()
-        except Exception as e:
-            err_str = str(e).lower()
-            hresult = getattr(e, "hresult", None)
-            if not hresult and hasattr(e, "args") and e.args and isinstance(e.args[0], int):
-                hresult = e.args[0]
-            if hresult in (-2147418111, -2147417846) or "отклонен" in err_str or "rejected" in err_str:
-                time.sleep(delay)
-                continue
-            raise
-    return func()
+from core.com_utils import com_retry
 
 
 class BatchPrinter:
