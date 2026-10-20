@@ -1,9 +1,12 @@
 """
 Установка «своих» плоттеров PDF (pc3 + pmp) в AutoCAD пользователя.
 
-Файлы лежат в папке plotters рядом с программой (в exe — внутри сборки):
-    plotters/PDF_ГОСТ.pc3   -> папка AutoCAD «Plotters»
-    plotters/PDF_ГОСТ.pmp   -> папка AutoCAD «Plotters/PMP Files»
+Файлы лежат в папке plotters рядом с программой (в exe — внутри сборки),
+по подпапкам версий AutoCAD — pc3 из новой версии старая НЕ читает
+(«нераспознанная версия: не может быть прочитано»):
+    plotters/2024/PDF_ГОСТ.pc3, PDF_ГОСТ.pmp   -> только в AutoCAD 2024
+    plotters/2021/PDF_ГОСТ.pc3, PDF_ГОСТ.pmp   -> только в AutoCAD 2021
+Ставятся только в ТОТ AutoCAD, к которому сейчас подключена программа.
 
 Копируются, если их нет у пользователя или они отличаются от тех, что в программе
 (так у всех коллег одинаковые форматы, а твои обновления доходят до всех).
@@ -21,34 +24,42 @@ def _split_paths(value) -> list:
     return [p.strip() for p in str(value or "").split(";") if p.strip()]
 
 
-def _acad_plotter_dirs(app=None) -> list:
-    """Пары (папка pc3, папка pmp) для всех найденных AutoCAD."""
-    pairs = []
-    # 1. Пути из настроек запущенного AutoCAD — самые точные
-    if app is not None:
-        try:
-            files = app.Preferences.Files
-            pc3_dirs = _split_paths(files.PrinterConfigPath)
-            try:
-                pmp_dirs = _split_paths(files.PrinterDescPath)
-            except Exception:
-                pmp_dirs = []
-            for d in pc3_dirs:
-                pmp = pmp_dirs[0] if pmp_dirs else os.path.join(d, "PMP Files")
-                pairs.append((d, pmp))
-        except Exception:
-            pass
-    # 2. Все установленные версии AutoCAD у пользователя (2021, 2024 и т.д.)
-    for d in glob.glob(os.path.expandvars(r"%APPDATA%\Autodesk\AutoCAD*\*\*\Plotters")):
-        pairs.append((d, os.path.join(d, "PMP Files")))
+# Внутренний номер версии AutoCAD -> год (имя подпапки в plotters/)
+ACAD_YEARS = {
+    "24.0": "2021", "24.1": "2022", "24.2": "2023", "24.3": "2024",
+    "25.0": "2025", "25.1": "2026",
+}
 
-    seen, result = set(), []
-    for pc3, pmp in pairs:
-        key = os.path.normcase(os.path.abspath(pc3))
-        if key not in seen and os.path.isdir(pc3):
-            seen.add(key)
-            result.append((pc3, pmp))
-    return result
+
+def _acad_year(app) -> str:
+    """'2024' для AutoCAD 2024 и т.п.; '' если не удалось определить."""
+    try:
+        ver = str(app.Version)          # например '24.3s (LMS Tech)'
+        return ACAD_YEARS.get(ver[:4], "")
+    except Exception:
+        return ""
+
+
+def _acad_plotter_dirs(app) -> list:
+    """Пары (папка pc3, папка pmp) из настроек запущенного AutoCAD."""
+    pairs = []
+    try:
+        files = app.Preferences.Files
+        pc3_dirs = _split_paths(files.PrinterConfigPath)
+        try:
+            pmp_dirs = _split_paths(files.PrinterDescPath)
+        except Exception:
+            pmp_dirs = []
+        for d in pc3_dirs:
+            # Пишем только в папку пользователя (Roaming), не в Program Files
+            if "appdata" not in d.lower() or not os.path.isdir(d):
+                continue
+            pmp = next((p for p in pmp_dirs if "appdata" in p.lower()), os.path.join(d, "PMP Files"))
+            pairs.append((d, pmp))
+            break  # достаточно основной папки
+    except Exception:
+        pass
+    return pairs
 
 
 def _copy_if_needed(src: str, dst_dir: str) -> bool:
@@ -73,8 +84,15 @@ def install_bundled_plotters(app=None) -> list:
     """
     installed = []
     try:
-        src_dir = get_resource_path("plotters")
+        if app is None:
+            return installed
+        year = _acad_year(app)
+        if not year:
+            print("[Плоттеры] Не удалось определить версию AutoCAD — установка пропущена")
+            return installed
+        src_dir = os.path.join(get_resource_path("plotters"), year)
         if not os.path.isdir(src_dir):
+            # для этой версии AutoCAD своих плоттеров в программе нет — ничего не ставим
             return installed
         pc3_files = glob.glob(os.path.join(src_dir, "*.pc3"))
         pmp_files = glob.glob(os.path.join(src_dir, "*.pmp"))
