@@ -10,6 +10,9 @@ class PrintCancelledError(Exception):
 
 
 from core.com_utils import com_retry
+# Повтор, когда AutoCAD занят. В exe занятость AutoCAD проявляется как AttributeError
+# вида "Item.ModelSpace" / "Open.ModelSpace" — обычный com_retry такое не повторяет.
+from core.autocad_connector import _retry_busy
 
 
 class BatchPrinter:
@@ -162,12 +165,40 @@ class BatchPrinter:
                 
         return modified_any
 
-    def print_frames(self, frames, printer_name: str, canonical_media_name: str, style_name: str, output_path: str, merge_pdf: bool = False, progress_callback=None, is_cancelled=None):
+    def _setup_model_layout(self, printer_name: str, style_name: str) -> None:
+        """Плоттер и стиль печати для пространства модели текущего чертежа."""
+        def _do():
+            ms_layout = self.doc.ModelSpace.Layout
+            ms_layout.ConfigName = printer_name
+            ms_layout.StyleSheet = style_name
+            ms_layout.PlotWithPlotStyles = True
+            ms_layout.PlotWithLineweights = True
+        try:
+            _retry_busy(_do)
+        except Exception as e:
+            print(f"Предупреждение: не удалось настроить ModelSpace: {e}")
+
+    @staticmethod
+    def _doc_alive(doc) -> bool:
+        """Документ есть и не закрыт (у закрытого COM-объекта обращение к свойству падает)."""
+        if doc is None:
+            return False
+        try:
+            doc.Name
+            return True
+        except Exception:
+            return False
+
+    def print_frames(self, frames, printer_name: str, canonical_media_name: str, style_name: str, output_path: str, merge_pdf: bool = False, progress_callback=None, is_cancelled=None,
+                     close_opened_docs: bool = False):
         """
         Отправляет выбранные рамки на печать в PDF.
         canonical_media_name используется как фолбэк, если не удалось подобрать формат.
         progress_callback: callable(current_step, total_steps, status_text)
         is_cancelled: callable() -> bool
+        close_opened_docs: закрывать ли после печати чертежи, которые программа открыла сама.
+            По умолчанию False — открытые чертежи остаются в AutoCAD (как в REVERS): повторная
+            печать не открывает их заново, а вкладки — наглядно, что печаталось.
         """
         import time
         import tempfile
@@ -175,9 +206,36 @@ class BatchPrinter:
         
         if not frames:
             return
-            
-        layout = self.doc.ModelSpace.Layout
-        
+
+        # Чертежи, уже открытые в AutoCAD до печати (их не закрываем)
+        initially_open_files = set()
+        if self.connector:
+            try:
+                for full_path, _ in self.connector.get_open_documents():
+                    if full_path:
+                        initially_open_files.add(os.path.abspath(full_path).lower())
+            except Exception:
+                pass
+        # Чертежи, открытые только для печати: {путь_в_нижнем_регистре: COM-документ}.
+        # COM-объекты нельзя класть в set (CDispatch не хешируется) — ключом служит путь.
+        opened_docs_to_close = {}
+        initial_active_doc = self.doc if self._doc_alive(self.doc) else None
+
+        # Рамки из папки: их чертежи в AutoCAD могут быть закрыты, и активного документа нет.
+        # Тогда сразу открываем DWG первой рамки — дальше всё настраивается на нём.
+        if not self._doc_alive(self.doc):
+            first_path = next((f.dwg_path for f in frames if getattr(f, "dwg_path", "")), "")
+            if not (self.connector and first_path):
+                raise RuntimeError("Нет открытого чертежа в AutoCAD и не указан файл DWG для печати.")
+            target_path = os.path.abspath(first_path)
+            doc, was_opened = self.connector.open_document(target_path, read_only=True)
+            if not self._doc_alive(doc):
+                raise RuntimeError(f"Не удалось открыть чертеж: {target_path}")
+            self.connector.activate_document(doc)
+            self.doc = doc
+            if was_opened and target_path.lower() not in initially_open_files:
+                opened_docs_to_close[target_path.lower()] = doc
+
         # Отключаем автооткрытие каждого листа в PDF-просмотрщике
         try:
             if self._disable_pc3_view_file(printer_name):
@@ -191,14 +249,7 @@ class BatchPrinter:
         # Если есть рамки из Model Space, предварительно настраиваем ModelSpace.Layout
         has_model_frames = any(getattr(f, "source_type", "") != "Layout" for f in frames)
         if has_model_frames:
-            try:
-                ms_layout = self.doc.ModelSpace.Layout
-                ms_layout.ConfigName = printer_name
-                ms_layout.StyleSheet = style_name
-                ms_layout.PlotWithPlotStyles = True
-                ms_layout.PlotWithLineweights = True
-            except Exception as e:
-                print(f"Предупреждение: не удалось настроить ModelSpace: {e}")
+            self._setup_model_layout(printer_name, style_name)
         
         # Отключаем фоновую печать
         try:
@@ -210,17 +261,6 @@ class BatchPrinter:
         # Проверяем, содержат ли рамки несколько разных DWG
         unique_dwgs = {os.path.abspath(f.dwg_path).lower() for f in frames if getattr(f, "dwg_path", "")}
         has_multiple_dwgs = len(unique_dwgs) > 1
-
-        initially_open_files = set()
-        if self.connector:
-            try:
-                for full_path, _ in self.connector.get_open_documents():
-                    if full_path:
-                        initially_open_files.add(os.path.abspath(full_path).lower())
-            except Exception:
-                pass
-        opened_docs_to_close = set()
-        initial_active_doc = self.doc
 
         # Создаем временную папку для temp-файлов (если режим merge)
         temp_dir = None
@@ -250,23 +290,18 @@ class BatchPrinter:
                     target_path = os.path.abspath(frame.dwg_path)
                     if not cur_doc_path or os.path.abspath(cur_doc_path).lower() != target_path.lower():
                         doc, was_opened = self.connector.open_document(target_path, read_only=True)
+                        if not self._doc_alive(doc):
+                            raise RuntimeError(f"Не удалось открыть чертеж: {target_path}")
                         self.connector.activate_document(doc)
                         self.doc = doc
                         if was_opened and target_path.lower() not in initially_open_files:
-                            opened_docs_to_close.add(doc)
+                            opened_docs_to_close[target_path.lower()] = doc
                         try:
-                            self.doc.SetVariable("BACKGROUNDPLOT", 0)
+                            _retry_busy(lambda: self.doc.SetVariable("BACKGROUNDPLOT", 0))
                         except Exception:
                             pass
                         if has_model_frames:
-                            try:
-                                ms_layout = self.doc.ModelSpace.Layout
-                                ms_layout.ConfigName = printer_name
-                                ms_layout.StyleSheet = style_name
-                                ms_layout.PlotWithPlotStyles = True
-                                ms_layout.PlotWithLineweights = True
-                            except Exception:
-                                pass
+                            self._setup_model_layout(printer_name, style_name)
 
                     
                 safe_name = "".join([c for c in frame.sheet_name if c.isalpha() or c.isdigit() or c in ' -_']).strip()
@@ -289,7 +324,7 @@ class BatchPrinter:
                     def switch_layout_tab():
                         if getattr(self.doc.ActiveLayout, "Name", "") != cur_layout.Name:
                             self.doc.ActiveLayout = cur_layout
-                    com_retry(switch_layout_tab)
+                    _retry_busy(switch_layout_tab)
                     
                     # Даем AutoCAD время на регенерацию Paper Space
                     time.sleep(0.4)
@@ -309,47 +344,51 @@ class BatchPrinter:
                                 pass
                                 
                         cur_layout.PlotType = 5  # acLayout
-                    com_retry(setup_layout_params)
+                    _retry_busy(setup_layout_params)
                 else:
-                    cur_layout = self.doc.ModelSpace.Layout
-                    # Автоподбор формата бумаги по формату рамки
-                    media_name = media_map.get(frame.paper_format, canonical_media_name)
-                    cur_layout.CanonicalMediaName = media_name
+                    # Окно печати по рамке в модели (повторяем целиком, если AutoCAD занят)
+                    def setup_model_params():
+                        cur_layout = self.doc.ModelSpace.Layout
+                        # Автоподбор формата бумаги по формату рамки
+                        media_name = media_map.get(frame.paper_format, canonical_media_name)
+                        cur_layout.CanonicalMediaName = media_name
                     
-                    # Подбор ориентации листа
-                    is_paper_landscape = False
-                    try:
-                        local_name = cur_layout.GetLocaleMediaName(media_name)
-                        import re
-                        nums = [float(x) for x in re.findall(r'\d+(?:\.\d+)?', local_name)]
-                        dims = [n for n in nums if n >= 100]
-                        if len(dims) >= 2:
-                            paper_w, paper_h = dims[-2], dims[-1]
-                            is_paper_landscape = paper_w > paper_h
-                    except:
-                        pass
-                    frame_w = abs(frame.max_point[0] - frame.min_point[0])
-                    frame_h = abs(frame.max_point[1] - frame.min_point[1])
-                    is_frame_landscape = frame_w > frame_h
+                        # Подбор ориентации листа
+                        is_paper_landscape = False
+                        try:
+                            local_name = cur_layout.GetLocaleMediaName(media_name)
+                            import re
+                            nums = [float(x) for x in re.findall(r'\d+(?:\.\d+)?', local_name)]
+                            dims = [n for n in nums if n >= 100]
+                            if len(dims) >= 2:
+                                paper_w, paper_h = dims[-2], dims[-1]
+                                is_paper_landscape = paper_w > paper_h
+                        except:
+                            pass
+                        frame_w = abs(frame.max_point[0] - frame.min_point[0])
+                        frame_h = abs(frame.max_point[1] - frame.min_point[1])
+                        is_frame_landscape = frame_w > frame_h
                     
-                    if is_frame_landscape != is_paper_landscape:
-                        cur_layout.PlotRotation = 1  # ac90degrees
-                    else:
-                        cur_layout.PlotRotation = 0  # ac0degrees
+                        if is_frame_landscape != is_paper_landscape:
+                            cur_layout.PlotRotation = 1  # ac90degrees
+                        else:
+                            cur_layout.PlotRotation = 0  # ac0degrees
                     
-                    p1 = win32com.client.VARIANT(
-                        win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
-                        (frame.min_point[0], frame.min_point[1])
-                    )
-                    p2 = win32com.client.VARIANT(
-                        win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
-                        (frame.max_point[0], frame.max_point[1])
-                    )
-                    cur_layout.SetWindowToPlot(p1, p2)
-                    cur_layout.PlotType = 4  # acWindow
-                    cur_layout.StandardScale = 0
-                    cur_layout.CenterPlot = True
+                        p1 = win32com.client.VARIANT(
+                            win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
+                            (frame.min_point[0], frame.min_point[1])
+                        )
+                        p2 = win32com.client.VARIANT(
+                            win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
+                            (frame.max_point[0], frame.max_point[1])
+                        )
+                        cur_layout.SetWindowToPlot(p1, p2)
+                        cur_layout.PlotType = 4  # acWindow
+                        cur_layout.StandardScale = 0
+                        cur_layout.CenterPlot = True
                 
+                    _retry_busy(setup_model_params)
+
                 dwg_prefix = ""
                 if has_multiple_dwgs and getattr(frame, "dwg_name", ""):
                     raw_dwg_base = os.path.splitext(frame.dwg_name)[0]
@@ -368,7 +407,7 @@ class BatchPrinter:
                 # Печать листа через PlotToFile с обработкой занятости AutoCAD (RPC_E_CALL_REJECTED)
                 def do_plot():
                     self.doc.Plot.PlotToFile(filepath, printer_name)
-                com_retry(do_plot)
+                _retry_busy(do_plot)
                 
                 if is_cancelled and is_cancelled():
                     raise PrintCancelledError("Печать отменена пользователем.")
@@ -417,16 +456,32 @@ class BatchPrinter:
                 progress_callback(total_steps, total_steps, "Готово!")
                 
         finally:
-            # Закрываем чертежи, открытые исключительно для пакетной печати
-            for d in opened_docs_to_close:
+            # BACKGROUNDPLOT хранится в реестре — возвращаем, пока открыт хоть один чертеж
+            try:
+                self.doc.SetVariable("BACKGROUNDPLOT", original_bg_plot)
+            except Exception:
+                pass
+
+            # Закрываем чертежи, открытые для печати, — только если так попросили
+            for d in (opened_docs_to_close.values() if close_opened_docs else []):
                 try:
                     if self.connector:
                         self.connector.close_document(d, save_changes=False)
                 except Exception:
                     pass
 
+            # Дальше работаем с исходным чертежом: self.doc мог указывать на уже закрытый.
+            # Исходного не было (печать из папки) — берём тот, что сейчас активен в AutoCAD (или None)
+            if initial_active_doc is not None:
+                self.doc = initial_active_doc
+            else:
+                try:
+                    self.doc = self.connector.app.ActiveDocument if self.connector else None
+                except Exception:
+                    self.doc = None
+
             # Возвращаем исходный активный Layout, если он был изменен
-            if original_active_layout_name:
+            if original_active_layout_name and initial_active_doc is not None:
                 try:
                     self.doc.ActiveLayout = self.doc.Layouts.Item(original_active_layout_name)
                 except Exception:
@@ -439,11 +494,6 @@ class BatchPrinter:
                 except Exception:
                     pass
 
-            # Возвращаем BACKGROUNDPLOT
-            try:
-                self.doc.SetVariable("BACKGROUNDPLOT", original_bg_plot)
-            except:
-                pass
             # Удаляем всю временную папку целиком
             if temp_dir and os.path.exists(temp_dir):
                 try:

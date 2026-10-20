@@ -1,0 +1,31 @@
+# ===== Python: кэш и виртуальные окружения =====
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# ===== Сборка exe (PyInstaller, установщик) =====
+build/
+dist/
+installer/
+*.spec
+
+# ===== Редакторы =====
+.vscode/
+.idea/
+*.suo
+*.user
+
+# ===== AutoCAD: служебные файлы =====
+*.bak
+*.dwl
+*.dwl2
+*.sv$
+*.log
+plot.log
+
+# ===== Результаты работы программы и отладка =====
+*.pdf
+spds_export_result.json

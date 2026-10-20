@@ -1,8 +1,5 @@
-import os
 import re
 import time
-import json
-import tempfile
 from typing import List, Any
 from core.models import Frame, detect_paper_format, ALL_FORMATS
 from parsers.base_parser import BaseParser
@@ -18,128 +15,81 @@ class SPDSParser(BaseParser):
         # Путь к LISP-экспортеру на базе алгоритмов SHEETS.lsp
         self.lisp_path = get_resource_path("core/lisp/spds_export.lsp")
 
-    def _load_sanitized_json(self, filepath: str) -> list:
-        """Считывает JSON, заменяя спецсимволы AutoCAD (\\U+2205 и т.д.) на валидный Unicode и экранируя слэши"""
-        with open(filepath, "r", encoding="cp1251") as f:
-            text = f.read()
-        # 1. Заменяем спецсимволы AutoCAD вида \U+XXXX на Unicode
-        clean = re.sub(r'\\U\+([0-9a-fA-F]{4})', lambda m: chr(int(m.group(1), 16)), text)
-        # 2. Защищаем любые неэкранированные обратные слэши
-        clean = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', clean)
-        return json.loads(clean)
-
     def _find_frames_via_lisp(self, doc: Any) -> List[Frame]:
-        """Мгновенный поиск СПДС-рамок через AutoLISP экспорт во временный файл"""
-        if not os.path.exists(self.lisp_path):
-            raise FileNotFoundError(f"LISP-скрипт не найден: {self.lisp_path}")
+        """Быстрый поиск СПДС-рамок через AutoLISP-экспорт во временный JSON"""
+        t_start = time.perf_counter()
+        data = self._run_lisp_export(doc, self.lisp_path, "sht-export-spds", prefix="acad_spds")
+        fmt_map = {k.upper(): k for k in ALL_FORMATS.keys()}
+        frames = []
+        for item in data:
+            hdl = item.get("handle", "")
+            num = str(item.get("sheet_number") or "").strip()
+            if not num or num.lower() == "unknown":
+                num = "Unknown"
 
-        temp_dir = tempfile.gettempdir()
-        temp_json = os.path.join(temp_dir, f"acad_spds_{os.getpid()}_{id(doc)}.json")
-        out_path = temp_json.replace("\\", "/")
+            name = str(item.get("sheet_name") or "").strip()
+            name = re.sub(r'[\r\n\t]+', ' ', name).strip()
+            name = re.sub(r'\s+', ' ', name)
+            if name.lower() == "unknown":
+                name = ""
 
-        if os.path.exists(temp_json):
-            try:
-                os.remove(temp_json)
-            except Exception:
-                pass
+            raw_fmt = item.get("format", "")
+            mult = item.get("multiplicity", 1)
+            sc = float(item.get("scale", 1.0))
+            ori = str(item.get("orientation", "")).strip().lower()
+            min_x = float(item.get("min_x", 0.0))
+            min_y = float(item.get("min_y", 0.0))
+            max_x = float(item.get("max_x", 0.0))
+            max_y = float(item.get("max_y", 0.0))
 
-        try:
-            t_start = time.perf_counter()
-            lisp_cmd = f'(progn (load "{self.lisp_path}") (sht-export-spds "{out_path}"))\n'
-            doc.SendCommand(lisp_cmd)
+            w = max_x - min_x
+            h = max_y - min_y
 
-            data = None
-            max_attempts = 100  # До 5 секунд (обычно отрабатывает за 0.05 - 0.15 сек)
-            for _ in range(max_attempts):
-                time.sleep(0.05)
-                if os.path.exists(temp_json) and os.path.getsize(temp_json) > 0:
-                    try:
-                        data = self._load_sanitized_json(temp_json)
-                        break
-                    except (json.JSONDecodeError, PermissionError):
-                        pass
+            # 1. Поиск в явном свойстве СПДС (с учетом кратности AxN)
+            detected_fmt = None
+            if raw_fmt:
+                clean_fmt = raw_fmt.strip().upper().replace('А', 'A').replace('Х', 'X')
+                if mult > 1 and "X" not in clean_fmt:
+                    clean_fmt = f"{clean_fmt}X{mult}"
+                m_fmt = re.search(r'\b(A[0-4](?:X\d+)?)\b', clean_fmt)
+                if m_fmt:
+                    fmt_key = m_fmt.group(1).upper()
+                    if fmt_key in fmt_map:
+                        detected_fmt = fmt_map[fmt_key]
 
-            if data is None:
-                raise TimeoutError("AutoCAD не вернул данные экспорта СПДС в отведенное время.")
+            # 2. Если габариты нулевые, но формат определен - рассчитываем габариты из формата и масштаба
+            if (w <= 0 or h <= 0) and detected_fmt and detected_fmt in ALL_FORMATS:
+                dim1, dim2 = ALL_FORMATS[detected_fmt]
+                if "верт" in ori or "vert" in ori or "port" in ori:
+                    fw = min(dim1, dim2) * sc
+                    fh = max(dim1, dim2) * sc
+                else:
+                    fw = max(dim1, dim2) * sc
+                    fh = min(dim1, dim2) * sc
+                max_x = min_x + fw
+                max_y = min_y + fh
+                w = fw
+                h = fh
 
-            fmt_map = {k.upper(): k for k in ALL_FORMATS.keys()}
-            frames = []
-            for item in data:
-                hdl = item.get("handle", "")
-                num = str(item.get("sheet_number") or "").strip()
-                if not num or num.lower() == "unknown":
-                    num = "Unknown"
+            # 3. Геометрический расчет формата по габаритам
+            if not detected_fmt:
+                detected_fmt = detect_paper_format(w, h, scale=sc)
 
-                name = str(item.get("sheet_name") or "").strip()
-                name = re.sub(r'[\r\n\t]+', ' ', name).strip()
-                name = re.sub(r'\s+', ' ', name)
-                if name.lower() == "unknown":
-                    name = ""
+            frame = Frame(
+                object_id=0,
+                sheet_number=num,
+                sheet_name=name,
+                min_point=(min_x, min_y, 0.0),
+                max_point=(max_x, max_y, 0.0),
+                source_type="SPDS",
+                paper_format=detected_fmt,
+                handle=hdl
+            )
+            frames.append(frame)
 
-                raw_fmt = item.get("format", "")
-                mult = item.get("multiplicity", 1)
-                sc = float(item.get("scale", 1.0))
-                ori = str(item.get("orientation", "")).strip().lower()
-                min_x = float(item.get("min_x", 0.0))
-                min_y = float(item.get("min_y", 0.0))
-                max_x = float(item.get("max_x", 0.0))
-                max_y = float(item.get("max_y", 0.0))
-
-                w = max_x - min_x
-                h = max_y - min_y
-
-                # 1. Поиск в явном свойстве СПДС (с учетом кратности AxN)
-                detected_fmt = None
-                if raw_fmt:
-                    clean_fmt = raw_fmt.strip().upper().replace('А', 'A').replace('Х', 'X')
-                    if mult > 1 and "X" not in clean_fmt:
-                        clean_fmt = f"{clean_fmt}X{mult}"
-                    m_fmt = re.search(r'\b(A[0-4](?:X\d+)?)\b', clean_fmt)
-                    if m_fmt:
-                        fmt_key = m_fmt.group(1).upper()
-                        if fmt_key in fmt_map:
-                            detected_fmt = fmt_map[fmt_key]
-
-                # 2. Если габариты нулевые, но формат определен - рассчитываем габариты из формата и масштаба
-                if (w <= 0 or h <= 0) and detected_fmt and detected_fmt in ALL_FORMATS:
-                    dim1, dim2 = ALL_FORMATS[detected_fmt]
-                    if "верт" in ori or "vert" in ori or "port" in ori:
-                        fw = min(dim1, dim2) * sc
-                        fh = max(dim1, dim2) * sc
-                    else:
-                        fw = max(dim1, dim2) * sc
-                        fh = min(dim1, dim2) * sc
-                    max_x = min_x + fw
-                    max_y = min_y + fh
-                    w = fw
-                    h = fh
-
-                # 3. Геометрический расчет формата по габаритам
-                if not detected_fmt:
-                    detected_fmt = detect_paper_format(w, h, scale=sc)
-
-                frame = Frame(
-                    object_id=0,
-                    sheet_number=num,
-                    sheet_name=name,
-                    min_point=(min_x, min_y, 0.0),
-                    max_point=(max_x, max_y, 0.0),
-                    source_type="SPDS",
-                    paper_format=detected_fmt,
-                    handle=hdl
-                )
-                frames.append(frame)
-
-            t_elapsed = time.perf_counter() - t_start
-            print(f"[SPDSParser] LISP экспорт выполнен за {t_elapsed:.3f} сек (найдено {len(frames)} рамок)")
-            return frames
-
-        finally:
-            if os.path.exists(temp_json):
-                try:
-                    os.remove(temp_json)
-                except Exception:
-                    pass
+        t_elapsed = time.perf_counter() - t_start
+        print(f"[SPDSParser] LISP экспорт выполнен за {t_elapsed:.3f} сек (найдено {len(frames)} рамок)")
+        return frames
 
     def _find_frames_fallback_com(self, doc: Any) -> List[Frame]:
         """Резервный перебор объектов через COM, если LISP недоступен"""

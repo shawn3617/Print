@@ -1,9 +1,5 @@
-import os
-import re
 import time
-import json
 import fnmatch
-import tempfile
 from typing import List, Any
 from core.models import Frame, detect_paper_format
 from parsers.base_parser import BaseParser
@@ -25,14 +21,6 @@ class BlockParser(BaseParser):
 
         # Путь к LISP-экстрактору рамок-блоков
         self.lisp_path = get_resource_path("core/lisp/block_export.lsp")
-
-    def _load_sanitized_json(self, filepath: str) -> list:
-        """Считывает JSON, заменяя спецсимволы AutoCAD (\\U+2205 и др.) на реальный Unicode и экранируя слэши"""
-        with open(filepath, "r", encoding="cp1251") as f:
-            text = f.read()
-        clean = re.sub(r'\\U\+([0-9a-fA-F]{4})', lambda m: chr(int(m.group(1), 16)), text)
-        clean = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', clean)
-        return json.loads(clean)
 
     def _convert_items_to_frames(self, items: list) -> List[Frame]:
         frames = []
@@ -79,55 +67,15 @@ class BlockParser(BaseParser):
             return True
 
     def _find_frames_via_lisp(self, doc: Any) -> List[Frame]:
-        if not os.path.exists(self.lisp_path):
-            raise FileNotFoundError(f"LISP-скрипт не найден: {self.lisp_path}")
-
-        temp_dir = tempfile.gettempdir()
-        temp_json = os.path.join(temp_dir, f"acad_blocks_{os.getpid()}_{id(doc)}.json")
-        out_path = temp_json.replace("\\", "/")
-
-        if os.path.exists(temp_json):
-            try:
-                os.remove(temp_json)
-            except Exception:
-                pass
-
-        patterns_str = ",".join(self.block_names)
-        sheet_tags_str = ",".join(self.sheet_attr_tags)
-        title_tags_str = ",".join(self.title_attr_tags)
-
-        try:
-            t_start = time.perf_counter()
-            lisp_cmd = (
-                f'(progn (load "{self.lisp_path}") '
-                f'(sht-export-blocks "{out_path}" "{patterns_str}" "{sheet_tags_str}" "{title_tags_str}"))\n'
-            )
-            doc.SendCommand(lisp_cmd)
-
-            data = None
-            max_attempts = 100  # до 5 секунд (обычно 0.05-0.1 сек)
-            for _ in range(max_attempts):
-                time.sleep(0.05)
-                if os.path.exists(temp_json) and os.path.getsize(temp_json) > 0:
-                    try:
-                        data = self._load_sanitized_json(temp_json)
-                        break
-                    except (json.JSONDecodeError, PermissionError):
-                        pass
-
-            if data is None:
-                raise TimeoutError("AutoCAD не вернул данные экспорта блоков за отведенное время.")
-
-            frames = self._convert_items_to_frames(data)
-            t_elapsed = time.perf_counter() - t_start
-            print(f"[BlockParser] LISP экспорт выполнен за {t_elapsed:.3f} сек (найдено {len(frames)} рамок)")
-            return frames
-        finally:
-            if os.path.exists(temp_json):
-                try:
-                    os.remove(temp_json)
-                except Exception:
-                    pass
+        t_start = time.perf_counter()
+        data = self._run_lisp_export(
+            doc, self.lisp_path, "sht-export-blocks",
+            [",".join(self.block_names), ",".join(self.sheet_attr_tags), ",".join(self.title_attr_tags)],
+            prefix="acad_blocks")
+        frames = self._convert_items_to_frames(data)
+        print(f"[BlockParser] LISP экспорт выполнен за {time.perf_counter() - t_start:.3f} сек "
+              f"(найдено {len(frames)} рамок)")
+        return frames
 
     def _find_frames_fallback_com(self, doc: Any) -> List[Frame]:
         frames = []

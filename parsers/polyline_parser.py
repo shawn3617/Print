@@ -1,166 +1,334 @@
-from typing import List, Any
-from core.models import Frame, detect_paper_format
+import re
+from typing import List, Any, Optional, Tuple
+
+import pythoncom
+import win32com.client
+
+from core.models import Frame, detect_paper_format, ALL_FORMATS
 from parsers.base_parser import BaseParser
+
+
+# Масштабы, к которым «притягивается» найденный масштаб рамки.
+# Форматы A0..A4 подобны (стороны относятся как 1:√2), поэтому A2 в М1:100 и A1 в М1:70.7
+# геометрически одинаковы — выбираем вариант с «круглым» масштабом.
+NICE_SCALES = [1, 2, 2.5, 4, 5, 10, 15, 20, 25, 40, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 1000]
+
+# Поля по ГОСТ 21.101: слева 20 мм, сверху/справа/снизу 5 мм
+MARGIN_LEFT, MARGIN_OTHER = 20.0, 5.0
+
+# Графы основной надписи формы 3 (185×55) — в мм от правого нижнего угла ВНУТРЕННЕЙ рамки:
+# (dx_min, dx_max, dy_min, dy_max)
+CELL_SHEET_NUM = (-35.0, -20.0, 15.0, 25.0)    # «Лист» — значение под заголовком
+CELL_SHEET_NAME = (-120.0, -50.0, 0.0, 15.0)   # графа 4 — наименование листа (нижняя строка)
+STAMP_ZONE = (-185.0, 0.0, 0.0, 60.0)          # вся основная надпись
+
+
+def _clean_text(s: str) -> str:
+    """Убирает коды форматирования MText ({\\fArial|b0;...}, \\P, \\A1; и т.п.)."""
+    s = s or ""
+    s = s.replace("\\P", " ").replace("\\~", " ")
+    s = re.sub(r"\\[ACcFfHhQqTtWwp][^;\\{}]*;", "", s)
+    s = re.sub(r"\\[LlOoKk]", "", s)
+    s = s.replace("{", "").replace("}", "")
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def match_candidates(w: float, h: float) -> List[dict]:
+    """
+    Все варианты, чем может быть прямоугольник w×h (w — по X, h — по Y): внешней границей
+    листа ('outer') или внутренней рамкой ('inner') формата из ALL_FORMATS в «круглом» масштабе.
+    Вариантов бывает несколько: форматы A0..A4 подобны, и 59400×42000 — это и A2 в М1:100,
+    и A4 в М1:200, и почти A0 в М1:50. Какой верный — решает choose_candidate().
+    """
+    res = []
+    for fmt, (fw, fh) in ALL_FORMATS.items():
+        long_, short_ = max(fw, fh), min(fw, fh)
+        for orient, (sw, sh) in (("landscape", (long_, short_)), ("portrait", (short_, long_))):
+            for kind, cw, ch in (("outer", sw, sh),
+                                 ("inner", sw - MARGIN_LEFT - MARGIN_OTHER, sh - 2 * MARGIN_OTHER)):
+                if cw <= 0 or ch <= 0:
+                    continue
+                sx, sy = w / cw, h / ch
+                if abs(sx - sy) / sx > 0.004:      # пропорции не совпали
+                    continue
+                sc = (sx + sy) / 2
+                nice = min(NICE_SCALES, key=lambda n: abs(n - sc) / n)
+                err = abs(nice - sc) / nice
+                if err > 0.004:                     # масштаб «некруглый»
+                    continue
+                res.append({"kind": kind, "format": fmt, "scale": float(nice),
+                            "orientation": orient, "err": err})
+    return res
+
+
+def _expected_other(bb, c):
+    """Где должна лежать парная полилиния (внутренняя для outer, внешняя для inner)."""
+    s = c["scale"]
+    if c["kind"] == "outer":
+        return (bb[0] + MARGIN_LEFT * s, bb[1] + MARGIN_OTHER * s, bb[2] - MARGIN_OTHER * s, bb[3] - MARGIN_OTHER * s)
+    return (bb[0] - MARGIN_LEFT * s, bb[1] - MARGIN_OTHER * s, bb[2] + MARGIN_OTHER * s, bb[3] + MARGIN_OTHER * s)
+
+
+def _anchor(bb, c):
+    """Правый нижний угол внутренней рамки — от него отсчитываются графы штампа."""
+    s = c["scale"]
+    if c["kind"] == "outer":
+        return (bb[2] - MARGIN_OTHER * s, bb[1] + MARGIN_OTHER * s)
+    return (bb[2], bb[1])
+
+
+# Заголовки граф справа в основной надписи формы 3 — для проверки масштаба по текстам: (текст, dx, dy) в мм
+STAMP_LABELS = (("стадия", -42.5, 27.5), ("лист", -27.5, 27.5), ("листов", -10.0, 27.5))
+
+
+def _label_score(anchor, s, texts) -> int:
+    ax, ay = anchor
+    score = 0
+    for word, ex, ey in STAMP_LABELS:
+        for tx, ty, val in texts:
+            if val.strip().lower() == word and abs((tx - ax) / s - ex) < 4 and abs((ty - ay) / s - ey) < 4:
+                score += 1
+                break
+    return score
+
+
+def choose_candidate(bb, cands, all_bboxes, texts, ltscale=None):
+    """Выбирает верный вариант формата/масштаба:
+    1) есть парная полилиния (внутренняя рамка там, где ей положено быть при этом масштабе);
+    2) заголовки «Стадия / Лист / Листов» стоят на своих местах в штампе;
+    3) масштаб совпадает с масштабом типа линий полилинии;
+    4) иначе — наименьшая погрешность."""
+    if not cands:
+        return None
+    def key(c):
+        s = c["scale"]
+        exp = _expected_other(bb, c)
+        tol = 1.0 * s  # 1 мм на листе
+        paired = any(all(abs(o[i] - exp[i]) < tol for i in range(4)) for o in all_bboxes if o is not bb)
+        return (
+            1 if paired else 0,
+            _label_score(_anchor(bb, c), s, texts),
+            1 if (ltscale and abs(ltscale - s) / s < 0.01) else 0,
+            1 if c["kind"] == "outer" else 0,
+            -c["err"],
+        )
+    return max(cands, key=key)
+
+
+def _inside(inner, outer, tol: float) -> bool:
+    return (inner[0] >= outer[0] - tol and inner[1] >= outer[1] - tol and
+            inner[2] <= outer[2] + tol and inner[3] <= outer[3] + tol)
+
+
+def _fallback_scale(width: float, height: float) -> float:
+    """Старое определение масштаба — для полилиний, не похожих на формат ГОСТ."""
+    dims = [210, 297, 420, 594, 841, 1189]
+    best_scale, min_diff = 1.0, float("inf")
+    for d in dims:
+        for actual in (width, height):
+            scale = actual / d
+            diff = abs(round(scale) - scale)
+            if diff < 0.05 and diff < min_diff:
+                min_diff, best_scale = diff, round(scale)
+    return max(1.0, float(best_scale))
+
+
+def analyze(polys: List[dict], texts: List[Tuple[float, float, str]]) -> List[dict]:
+    """
+    Чистая геометрия, без COM (можно проверять без AutoCAD).
+    polys: [{'bbox': (minx, miny, maxx, maxy), 'ref': COM-объект}, ...]
+    texts: [(x_центра, y_центра, текст), ...]
+    Возвращает рамки: {'bbox', 'scale', 'format', 'sheet_number', 'sheet_name', 'ref', 'texts'}.
+    """
+    items = []
+    for p in polys:
+        x1, y1, x2, y2 = p["bbox"]
+        w, h = x2 - x1, y2 - y1
+        if w <= 0 or h <= 0:
+            continue
+        items.append({"p": p, "w": w, "h": h, "area": w * h})
+    all_bboxes = [it["p"]["bbox"] for it in items]
+    for it in items:
+        it["m"] = choose_candidate(it["p"]["bbox"], match_candidates(it["w"], it["h"]),
+                                   all_bboxes, texts, it["p"].get("ltscale"))
+    items.sort(key=lambda it: -it["area"])
+
+    frames = []
+    for it in items:
+        bb, m = it["p"]["bbox"], it["m"]
+
+        # Полилиния внутри уже найденного листа — его внутренняя рамка (или линии штампа):
+        # отдельным листом не считаем, но угол внутренней рамки берём как угол штампа.
+        host = next((f for f in frames if _inside(bb, f["bbox"], tol=0.01 * f["w"])), None)
+        if host is not None:
+            if m and m["kind"] == "inner" and not host["anchor_from_inner"] \
+                    and abs(m["scale"] - host["scale"]) / host["scale"] < 0.01:
+                host["anchor"] = (bb[2], bb[1])
+                host["anchor_from_inner"] = True
+            continue
+
+        if m is None:
+            # Не формат ГОСТ — как раньше: лист = полилиния, угол штампа = её правый нижний угол
+            frames.append({"bbox": bb, "w": it["w"], "scale": _fallback_scale(it["w"], it["h"]),
+                           "format": None, "anchor": (bb[2], bb[1]), "anchor_from_inner": True,
+                           "ref": it["p"]["ref"]})
+            continue
+
+        s = m["scale"]
+        anchor = _anchor(bb, m)
+        # Есть только внутренняя рамка — печатаем по внешней границе листа
+        frame_bb = bb if m["kind"] == "outer" else _expected_other(bb, m)
+        frames.append({"bbox": frame_bb, "w": frame_bb[2] - frame_bb[0], "scale": s, "format": m["format"],
+                       "anchor": anchor, "anchor_from_inner": m["kind"] == "inner", "ref": it["p"]["ref"]})
+
+    for f in frames:
+        f["sheet_number"], f["sheet_name"], f["texts"] = _read_stamp(f["anchor"], f["scale"], texts)
+    return frames
+
+
+def _read_stamp(anchor, s, texts):
+    """Номер и наименование листа по графам основной надписи."""
+    ax, ay = anchor
+    local = []  # (dx_мм, dy_мм, текст) от правого нижнего угла внутренней рамки
+    for tx, ty, val in texts:
+        dx, dy = (tx - ax) / s, (ty - ay) / s
+        if STAMP_ZONE[0] <= dx <= STAMP_ZONE[1] + 2 and STAMP_ZONE[2] - 2 <= dy <= STAMP_ZONE[3]:
+            local.append((dx, dy, val))
+
+    def in_cell(cell):
+        return [t for t in local if cell[0] <= t[0] <= cell[1] and cell[2] <= t[1] <= cell[3]]
+
+    # номер листа: графа «Лист» формы 3, иначе — рядом с надписью «Лист»
+    cell = [t for t in in_cell(CELL_SHEET_NUM) if t[2].strip().lower() not in ("лист", "листов")]
+    number = max(cell, key=lambda t: t[1])[2] if cell else _number_near_label(local)
+
+    # наименование листа: графа 4, строки сверху вниз
+    name = " ".join(t[2].strip() for t in sorted(in_cell(CELL_SHEET_NAME), key=lambda t: -t[1]))
+
+    return (number or "Unknown"), (name or "Unknown"), [t[2] for t in local]
+
+
+def _number_near_label(local):
+    """Запасной поиск номера: значение под надписью «Лист» (формы 3, 5, 6)
+    или справа от неё в той же строке (форма 4: «Лист  12   Листов  30»)."""
+    labels = [t for t in local if t[2].strip().lower() == "лист"]
+    if not labels:
+        return ""
+    lx, ly, _ = max(labels, key=lambda t: t[0])   # самый правый «Лист»
+    others = [t for t in local if t[2].strip().lower() not in ("лист", "листов")]
+    below = [t for t in others if abs(t[0] - lx) < 7 and -12 < t[1] - ly < 0]
+    if below:
+        return max(below, key=lambda t: t[1])[2]
+    right = [t for t in others if abs(t[1] - ly) < 3 and 0 < t[0] - lx < 20]
+    if right:
+        return min(right, key=lambda t: t[0])[2]
+    return ""
+
 
 class PolylineParser(BaseParser):
     def __init__(self, target_layer: str = "0000_Формат"):
         """
         :param target_layer: Имя слоя, на котором лежат рамки и тексты
         """
+        self.target_layer_name = target_layer
         self.target_layer = target_layer.lower()
 
-    def _get_scale(self, width: float, height: float) -> float:
-        """Определяет масштаб рамки на основе стандартных ГОСТ форматов (в мм)"""
-        dims = [210, 297, 420, 594, 841, 1189]
-        best_scale = 1.0
-        min_diff = float('inf')
-        for d in dims:
-            for actual in (width, height):
-                scale = actual / d
-                diff = abs(round(scale) - scale)
-                if diff < 0.05 and diff < min_diff:
-                    min_diff = diff
-                    best_scale = round(scale)
-        return max(1.0, float(best_scale))
+    def _select_on_layer(self, doc: Any) -> Optional[list]:
+        """
+        Объекты модели на целевом слое (полилинии и тексты) одним запросом через набор выбора.
+        Это в десятки раз быстрее, чем перебирать через COM каждый объект ModelSpace.
+        Если набор выбора не сработал — None (тогда перебираем по-старому).
+        """
+        ss_name = "PDFPRINT_POLY_SS"
+        try:
+            try:
+                doc.SelectionSets.Item(ss_name).Delete()
+            except Exception:
+                pass
+            ss = doc.SelectionSets.Add(ss_name)
+            ftype = win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_I2, [0, 8, 410])
+            fdata = win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_VARIANT,
+                                            ["LWPOLYLINE,POLYLINE,TEXT,MTEXT", self.target_layer_name, "Model"])
+            try:
+                # 5 = acSelectionSetAll; точки не нужны — передаём «пропущенный аргумент»
+                no_arg = getattr(pythoncom, "ArgNotFound", pythoncom.Missing)
+                ss.Select(5, no_arg, no_arg, ftype, fdata)
+                objs = [ss.Item(i) for i in range(ss.Count)]
+            finally:
+                try:
+                    ss.Delete()
+                except Exception:
+                    pass
+            return objs
+        except Exception as e:
+            print(f"[PolylineParser] Набор выбора не сработал ({e}), перебор ModelSpace...")
+            return None
 
     def find_frames(self, doc: Any) -> List[Frame]:
         frames = []
-        
-        # Быстрая проверка таблицы слоев (занимает 0.001 сек)
+
+        # Быстрая проверка таблицы слоев
         try:
             layers = doc.Layers
-            layer_found = False
-            for lay_idx in range(layers.Count):
-                if getattr(layers.Item(lay_idx), 'Name', '').lower() == self.target_layer:
-                    layer_found = True
-                    break
-            if not layer_found:
+            if not any(getattr(layers.Item(i), 'Name', '').lower() == self.target_layer
+                       for i in range(layers.Count)):
                 return frames
         except Exception:
             pass
 
-        model_space = doc.ModelSpace
-        
-        # 1. Собираем все полилинии и тексты с нужного слоя за один проход
-        polylines = []
-        texts = []
-        
-        for i in range(model_space.Count):
-            obj = model_space.Item(i)
-            layer = getattr(obj, 'Layer', '').lower()
-            
-            if layer == self.target_layer:
-                ent_name = getattr(obj, 'EntityName', '')
-                # Замкнутые рамки это обычно AcDbPolyline
-                if 'Polyline' in ent_name:
-                    polylines.append(obj)
-                elif ent_name in ['AcDbText', 'AcDbMText']:
-                    texts.append(obj)
-                    
-        # 2. Обрабатываем каждую полилинию как отдельную рамку
-        for poly in polylines:
+        # 1. Полилинии и тексты с нужного слоя
+        objs = self._select_on_layer(doc)
+        if objs is None:
+            objs = []
+            model_space = doc.ModelSpace
+            for i in range(model_space.Count):
+                try:
+                    obj = model_space.Item(i)
+                    if getattr(obj, 'Layer', '').lower() == self.target_layer:
+                        objs.append(obj)
+                except Exception:
+                    continue
+
+        polys = []
+        texts = []  # (x_центра, y_центра, текст) — габариты текста считаем один раз
+        for obj in objs:
             try:
-                min_pt, max_pt = poly.GetBoundingBox()
-                # Правый нижний угол рамки (базовая точка штампа)
-                br_x = max_pt[0]
-                br_y = min_pt[1]
-                
-                # Вычисляем размеры рамки (ширину и высоту)
-                width = max_pt[0] - min_pt[0]
-                height = max_pt[1] - min_pt[1]
-                
-                sheet_number = "Unknown"
-                stamp_texts = []
-                # Сохраняем не только строки, но и сами COM-объекты текста для точного поиска
-                texts_in_zone = []
-                
-                # Пространственный поиск текста штампа
-                for text_obj in texts:
+                ent_name = getattr(obj, 'EntityName', '')
+                if 'Polyline' in ent_name:
+                    mn, mx = obj.GetBoundingBox()
                     try:
-                        # Получаем реальные габариты текста, чтобы избежать проблем с выравниванием (Alignment)
-                        t_min, t_max = text_obj.GetBoundingBox()
-                        # Вычисляем геометрический центр текста
-                        tx = (t_min[0] + t_max[0]) / 2
-                        ty = (t_min[1] + t_max[1]) / 2
-                        
-                        search_width = width * 0.35
-                        search_height = height * 0.35
-                        
-                        if (br_x - search_width) <= tx <= br_x and br_y <= ty <= (br_y + search_height):
-                            val = getattr(text_obj, 'TextString', '').strip()
-                            if val:
-                                stamp_texts.append(val)
-                                texts_in_zone.append({
-                                    'obj': text_obj,
-                                    'text': val,
-                                    'x': tx,
-                                    'y': ty
-                                })
-                    except:
-                        pass
-                
-                # Умная логика поиска номера листа (ГОСТ штамп)
-                # 1. Находим слово "Лист"
-                list_texts = [t for t in texts_in_zone if t['text'].lower() == 'лист']
-                
-                if list_texts:
-                    # Нам нужен тот "Лист", который правее (с максимальным X)
-                    rightmost_list = max(list_texts, key=lambda t: t['x'])
-                    lx, ly = rightmost_list['x'], rightmost_list['y']
-                    
-                    # 2. По ГОСТу номер листа пишется СНИЗУ под словом "Лист" в той же колонке.
-                    candidates = []
-                    x_tolerance = width * 0.02 # Допуск по ширине колонки (примерно 12-15 мм)
-                    
-                    for t in texts_in_zone:
-                        tx, ty, val = t['x'], t['y'], t['text']
-                        
-                        # Если X примерно равен X "Листа", а Y меньше Y "Листа" (ниже)
-                        if val.lower() not in ['лист', 'листов'] and abs(tx - lx) < x_tolerance and ty < ly:
-                            candidates.append(t)
-                            
-                    if candidates:
-                        # Берем тот текст, который ближе всего СНИЗУ к заголовку "Лист" (максимальный Y)
-                        closest = max(candidates, key=lambda t: t['y'])
-                        sheet_number = closest['text']
-                        
-                # 3. Находим название листа в жестких координатах ГОСТ штампа
-                # Судя по диагностике, текст лежит на X = -45.0 мм, Y = 6.1 мм.
-                scale = self._get_scale(width, height)
-                sheet_name = "Unknown"
-                name_texts = []
-                
-                # Зона поиска: X от -65мм до -25мм (избегаем даты на -65 и столбца 'Стадия' на -23)
-                # Y от 2мм до 25мм (чтобы захватить многострочный текст)
-                for t in texts_in_zone:
-                    tx, ty, val = t['x'], t['y'], t['text']
-                    if (br_x - 65 * scale) <= tx <= (br_x - 25 * scale) and (br_y + 2 * scale) <= ty <= (br_y + 25 * scale):
-                        if val and val.lower() not in ['стадия', 'р', 'п', 'дата']: # Исключаем служебные слова
-                            name_texts.append((ty, val)) # Сохраняем с координатой Y для сортировки
-                            
-                if name_texts:
-                    # Сортируем тексты сверху вниз (от большего Y к меньшему) для многострочных названий
-                    name_texts.sort(key=lambda x: x[0], reverse=True)
-                    sheet_name = " ".join([txt for y, txt in name_texts])
-                            
-                scale = self._get_scale(width, height)
+                        lts = float(obj.LinetypeScale)
+                    except Exception:
+                        lts = None
+                    polys.append({"bbox": (mn[0], mn[1], mx[0], mx[1]), "ref": obj, "ltscale": lts})
+                elif ent_name in ('AcDbText', 'AcDbMText'):
+                    val = _clean_text(getattr(obj, 'TextString', ''))
+                    if val:
+                        # реальные габариты — чтобы не зависеть от выравнивания (Alignment)
+                        t_min, t_max = obj.GetBoundingBox()
+                        texts.append(((t_min[0] + t_max[0]) / 2, (t_min[1] + t_max[1]) / 2, val))
+            except Exception:
+                continue
+
+        # 2. Геометрия: внешняя граница + внутренняя рамка = один лист; графы штампа по ГОСТ
+        for f in analyze(polys, texts):
+            try:
+                x1, y1, x2, y2 = f["bbox"]
+                poly = f["ref"]
+                fmt = f["format"] or detect_paper_format(x2 - x1, y2 - y1, scale=f["scale"])
                 frame = Frame(
-                    object_id=poly.ObjectID,
-                    sheet_number=sheet_number,
-                    sheet_name=sheet_name,
-                    min_point=min_pt,
-                    max_point=max_pt,
+                    object_id=getattr(poly, 'ObjectID', 0),
+                    sheet_number=f["sheet_number"],
+                    sheet_name=f["sheet_name"],
+                    min_point=(x1, y1, 0.0),
+                    max_point=(x2, y2, 0.0),
                     source_type="Polyline",
-                    paper_format=detect_paper_format(width, height, scale=scale),
+                    paper_format=fmt,
                     handle=getattr(poly, 'Handle', '')
                 )
-                
-                # Сохраним найденные тексты прямо в объект для отладки
-                frame._debug_texts = stamp_texts
-                
+                frame._debug_texts = f["texts"]
                 frames.append(frame)
-                
             except Exception as e:
                 print(f"Ошибка при обработке полилинии: {e}")
-                
+
         return frames

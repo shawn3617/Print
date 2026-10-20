@@ -1,7 +1,25 @@
 import os
+import time
 import win32com.client
 import pythoncom
 from core.com_utils import com_retry
+
+def _retry_busy(func, max_attempts: int = 20, delay: float = 0.25):
+    """
+    Повторяет вызов, пока AutoCAD занят.
+    Особенность win32com без кэша типов (так работает exe): если AutoCAD занят и отклоняет вызов,
+    ошибка приходит не как com_error, а как AttributeError '<unknown>.Count' / 'Open.ModelSpace'.
+    Поэтому повторяем и при AttributeError.
+    """
+    last = None
+    for _ in range(max_attempts):
+        try:
+            return func()
+        except (pythoncom.com_error, AttributeError) as e:
+            last = e
+            time.sleep(delay)
+    raise last
+
 
 class AutoCADConnector:
     """
@@ -72,7 +90,7 @@ class AutoCADConnector:
             return None
 
         try:
-            return com_retry(_check, max_attempts=15, delay=0.25)
+            return _retry_busy(_check, max_attempts=40, delay=0.25)
         except Exception as e:
             print(f"Предупреждение при поиске открытого документа: {e}")
             return None
@@ -97,7 +115,7 @@ class AutoCADConnector:
             return res
 
         try:
-            return com_retry(_fetch, max_attempts=10, delay=0.25)
+            return _retry_busy(_fetch, max_attempts=40, delay=0.25)
         except Exception:
             return []
 
@@ -123,9 +141,44 @@ class AutoCADConnector:
         def _do_open():
             return self.app.Documents.Open(abs_path, read_only)
 
-        doc = com_retry(_do_open, max_attempts=20, delay=0.35)
+        opened = com_retry(_do_open, max_attempts=20, delay=0.35)
+        doc = self._wait_document_ready(abs_path, opened)
         self.doc = doc
         return doc, True
+
+    @staticmethod
+    def _doc_usable(d) -> bool:
+        """Документ отвечает на обращения (не «полуоткрытый»)."""
+        try:
+            d.Name
+            d.ModelSpace.Count
+            return True
+        except Exception:
+            return False
+
+    def _wait_document_ready(self, abs_path: str, opened, timeout: float = 30.0):
+        """
+        Documents.Open возвращает объект, когда AutoCAD ещё догружает чертеж.
+        В exe (без кэша типов win32com) такой объект часто «пустой»: любое свойство даёт
+        AttributeError 'Open.ModelSpace' / 'Open.Close'. Поэтому ждём, пока AutoCAD освободится,
+        и берём документ заново из коллекции Documents по пути — этот объект полноценный.
+        """
+        end = time.perf_counter() + timeout
+        while time.perf_counter() < end:
+            try:
+                if not self.app.GetAcadState().IsQuiescent:
+                    time.sleep(0.1)
+                    continue
+            except Exception:
+                time.sleep(0.1)
+                continue
+            d = self.find_open_document(abs_path)
+            if d is not None and self._doc_usable(d):
+                return d
+            if opened is not None and self._doc_usable(opened):
+                return opened
+            time.sleep(0.2)
+        raise RuntimeError(f"AutoCAD не успел открыть чертеж за {timeout:.0f} сек: {abs_path}")
 
     def close_document(self, doc, save_changes: bool = False):
         """
