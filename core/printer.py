@@ -1,6 +1,7 @@
 import os
 import logging
 import win32com.client
+import pythoncom
 
 logging.getLogger("pypdf").setLevel(logging.ERROR)
 
@@ -13,16 +14,30 @@ from core.com_utils import com_retry
 # Повтор, когда AutoCAD занят. В exe занятость AutoCAD проявляется как AttributeError
 # вида "Item.ModelSpace" / "Open.ModelSpace" — обычный com_retry такое не повторяет.
 from core.autocad_connector import _retry_busy
+from core.plotter_installer import install_bundled_plotters
 
 
 class BatchPrinter:
     def __init__(self, doc, connector=None):
         self.doc = doc
         self.connector = connector
+        self._plotters_checked = False
+
+    def _ensure_plotters(self):
+        """Один раз за запуск: свои плоттеры (папка plotters программы) -> в AutoCAD."""
+        if self._plotters_checked:
+            return
+        self._plotters_checked = True
+        try:
+            app = self.doc.Application if self.doc is not None else None
+        except Exception:
+            app = None
+        install_bundled_plotters(app)
 
 
     def get_printers(self):
         """Возвращает список доступных плоттеров/принтеров"""
+        self._ensure_plotters()   # до обновления списка — тогда новые плоттеры сразу в нём
         layout = self.doc.ModelSpace.Layout
         layout.RefreshPlotDeviceInfo()
         # Возвращаем список устройств (может потребовать преобразования из COM-кортежа)
@@ -54,6 +69,39 @@ class BatchPrinter:
         except:
             return ["monochrome.ctb", "acad.ctb"]
 
+    def _apply_printer(self, layout, printer_name: str) -> str:
+        """
+        Назначает плоттер листу и возвращает его точное имя.
+        Если такого плоттера в AutoCAD нет — понятная ошибка со списком доступных
+        (вместо непонятного «Неверный ввод» от AutoCAD).
+        """
+        _retry_busy(layout.RefreshPlotDeviceInfo)
+        try:
+            names = [str(n) for n in _retry_busy(layout.GetPlotDeviceNames)]
+        except Exception:
+            names = []
+        exact = next((n for n in names if n.lower() == printer_name.lower()), None)
+        if names and exact is None:
+            shown = ", ".join(n for n in names if n.lower() != "нет") [:600]
+            raise RuntimeError(
+                f"Плоттер «{printer_name}» не найден в AutoCAD на этом компьютере.\n"
+                f"Выберите другой в списке принтеров. Доступные: {shown}")
+        name = exact or printer_name
+        try:
+            _retry_busy(lambda: setattr(layout, "ConfigName", name))
+        except pythoncom.com_error:
+            # Иногда AutoCAD принимает плоттер только у активного чертежа — активируем и пробуем снова
+            try:
+                _retry_busy(lambda: setattr(self.doc.Application, "ActiveDocument", self.doc))
+                _retry_busy(layout.RefreshPlotDeviceInfo)
+                _retry_busy(lambda: setattr(layout, "ConfigName", name))
+            except pythoncom.com_error as e:
+                raise RuntimeError(
+                    f"AutoCAD не принял плоттер «{name}» для чертежа «{getattr(self.doc, 'Name', '?')}»: "
+                    f"{e.args[2][2] if len(e.args) > 2 and e.args[2] else e}")
+        _retry_busy(layout.RefreshPlotDeviceInfo)
+        return name
+
     def _build_media_map(self, printer_name: str) -> dict:
         """Строит словарь {формат (A0..A4, A3x5 и т.д.) -> canonical_media_name} для выбранного принтера."""
         import re
@@ -61,9 +109,8 @@ class BatchPrinter:
         
         result = {}
         try:
-            layout = self.doc.ModelSpace.Layout
-            layout.ConfigName = printer_name
-            layout.RefreshPlotDeviceInfo()
+            layout = _retry_busy(lambda: self.doc.ModelSpace.Layout)
+            self._apply_printer(layout, printer_name)
             names = layout.GetCanonicalMediaNames()
             for sys_name in names:
                 local_name = layout.GetLocaleMediaName(sys_name)
@@ -167,16 +214,17 @@ class BatchPrinter:
 
     def _setup_model_layout(self, printer_name: str, style_name: str) -> None:
         """Плоттер и стиль печати для пространства модели текущего чертежа."""
+        ms_layout = _retry_busy(lambda: self.doc.ModelSpace.Layout)
+        self._apply_printer(ms_layout, printer_name)   # без плоттера печатать нельзя — ошибка наверх
+
         def _do():
-            ms_layout = self.doc.ModelSpace.Layout
-            ms_layout.ConfigName = printer_name
             ms_layout.StyleSheet = style_name
             ms_layout.PlotWithPlotStyles = True
             ms_layout.PlotWithLineweights = True
         try:
             _retry_busy(_do)
         except Exception as e:
-            print(f"Предупреждение: не удалось настроить ModelSpace: {e}")
+            print(f"Предупреждение: не удалось назначить стиль печати «{style_name}»: {e}")
 
     @staticmethod
     def _doc_alive(doc) -> bool:
@@ -243,6 +291,7 @@ class BatchPrinter:
         except Exception as e:
             print(f"Предупреждение: не удалось проверить PC3 настройки: {e}")
         
+        self._ensure_plotters()
         # Строим словарь {формат -> canonical_name} из доступных форматов принтера
         media_map = self._build_media_map(printer_name)
         
@@ -350,8 +399,20 @@ class BatchPrinter:
                     def setup_model_params():
                         cur_layout = self.doc.ModelSpace.Layout
                         # Автоподбор формата бумаги по формату рамки
-                        media_name = media_map.get(frame.paper_format, canonical_media_name)
-                        cur_layout.CanonicalMediaName = media_name
+                        media_name = media_map.get(frame.paper_format)
+                        if not media_name:
+                            # Резервный формат: у плоттера нет бумаги под формат этой рамки
+                            print(f"Предупреждение: у плоттера «{printer_name}» нет бумаги для формата "
+                                  f"{frame.paper_format} (лист {frame.sheet_number}) — печать на резервном "
+                                  f"формате «{canonical_media_name}»")
+                            media_name = canonical_media_name
+                        try:
+                            cur_layout.CanonicalMediaName = media_name
+                        except pythoncom.com_error:
+                            raise RuntimeError(
+                                f"Плоттер «{printer_name}» не поддерживает формат бумаги «{media_name}» "
+                                f"(лист {frame.sheet_number}, формат {frame.paper_format}). "
+                                f"Проверьте выбранный формат бумаги или настройки плоттера.")
                     
                         # Подбор ориентации листа
                         is_paper_landscape = False

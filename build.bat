@@ -14,6 +14,7 @@ python -m PyInstaller --noconfirm --clean ^
   --collect-submodules core ^
   --collect-submodules parsers ^
   --add-data "core\lisp;core\lisp" ^
+  --add-data "plotters;plotters" ^
   --add-data "config.json;." ^
   --add-data "autocad_to_pdf_icon.ico;." ^
   run_app.py

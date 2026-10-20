@@ -1,0 +1,1685 @@
+PIAFILEVERSION_3.0,json
+{
+ "data" : 
+ {
+  "hidden" : 
+  {
+   "media" : 
+   {
+    "default_size" : "ANSI_A_(11.00_x_8.50_Inches)",
+    "size" : 
+    {
+     "0" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ANSI A (11.00 x 8.50 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_A_Landscape_11.00W_x_8.50H_-_(5,_17)_x_(274,_199)_=49004_MM",
+      "media_group" : 0,
+      "name" : "ANSI_A_(11.00_x_8.50_Inches)"
+     },
+     "1" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI A (8.50 x 11.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_A_Portrait_8.50W_x_11.00H_-_(5,_17)_x_(211,_262)_=50528_MM",
+      "media_group" : 0,
+      "name" : "ANSI_A_(8.50_x_11.00_Inches)"
+     },
+     "10" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI без \u043f\u043e\u043bей A (8.50 x 11.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_full_bleed_A_Portrait_8.50W_x_11.00H_-_(,_)_x_(216,_279)_=60322_MM",
+      "media_group" : 0,
+      "name" : "ANSI_full_bleed_A_(8.50_x_11.00_Inches)"
+     },
+     "11" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI без \u043f\u043e\u043bей B (11.00 x 17.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_full_bleed_B_Portrait_11.00W_x_17.00H_-_(,_)_x_(279,_432)_=120645_MM",
+      "media_group" : 0,
+      "name" : "ANSI_full_bleed_B_(11.00_x_17.00_Inches)"
+     },
+     "12" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ANSI без \u043f\u043e\u043bей B (17.00 x 11.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_full_bleed_B_Landscape_17.00W_x_11.00H_-_(,_)_x_(432,_279)_=120645_MM",
+      "media_group" : 0,
+      "name" : "ANSI_full_bleed_B_(17.00_x_11.00_Inches)"
+     },
+     "13" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI без \u043f\u043e\u043bей C (17.00 x 22.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_full_bleed_C_Portrait_17.00W_x_22.00H_-_(,_)_x_(432,_559)_=241290_MM",
+      "media_group" : 0,
+      "name" : "ANSI_full_bleed_C_(17.00_x_22.00_Inches)"
+     },
+     "14" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ANSI без \u043f\u043e\u043bей C (22.00 x 17.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_full_bleed_C_Landscape_22.00W_x_17.00H_-_(,_)_x_(559,_432)_=241290_MM",
+      "media_group" : 0,
+      "name" : "ANSI_full_bleed_C_(22.00_x_17.00_Inches)"
+     },
+     "15" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI без \u043f\u043e\u043bей D (22.00 x 34.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_full_bleed_D_Portrait_22.00W_x_34.00H_-_(,_)_x_(559,_864)_=482580_MM",
+      "media_group" : 0,
+      "name" : "ANSI_full_bleed_D_(22.00_x_34.00_Inches)"
+     },
+     "16" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ANSI без \u043f\u043e\u043bей D (34.00 x 22.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_full_bleed_D_Landscape_34.00W_x_22.00H_-_(,_)_x_(864,_559)_=482580_MM",
+      "media_group" : 0,
+      "name" : "ANSI_full_bleed_D_(34.00_x_22.00_Inches)"
+     },
+     "17" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI без \u043f\u043e\u043bей E (34.00 x 44.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_full_bleed_E_Portrait_34.00W_x_44.00H_-_(,_)_x_(864,_1118)_=965159_MM",
+      "media_group" : 0,
+      "name" : "ANSI_full_bleed_E_(34.00_x_44.00_Inches)"
+     },
+     "18" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI без \u043f\u043e\u043bей F (28.00 x 40.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_full_bleed_F_Portrait_28.00W_x_40.00H_-_(,_)_x_(711,_1016)_=722579_MM",
+      "media_group" : 0,
+      "name" : "ANSI_full_bleed_F_(28.00_x_40.00_Inches)"
+     },
+     "19" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ANSI расш. A (11.00 x 8.50 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_expand_A_Landscape_11.00W_x_8.50H_-_(5,_10)_x_(274,_206)_=52775_MM",
+      "media_group" : 0,
+      "name" : "ANSI_expand_A_(11.00_x_8.50_Inches)"
+     },
+     "2" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI B (11.00 x 17.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_B_Portrait_11.00W_x_17.00H_-_(5,_17)_x_(274,_415)_=107167_MM",
+      "media_group" : 0,
+      "name" : "ANSI_B_(11.00_x_17.00_Inches)"
+     },
+     "20" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI расш. A (8.50 x 11.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_expand_A_Portrait_8.50W_x_11.00H_-_(5,_10)_x_(211,_269)_=53410_MM",
+      "media_group" : 0,
+      "name" : "ANSI_expand_A_(8.50_x_11.00_Inches)"
+     },
+     "21" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI расш. B (11.00 x 17.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_expand_B_Portrait_11.00W_x_17.00H_-_(5,_10)_x_(274,_422)_=110939_MM",
+      "media_group" : 0,
+      "name" : "ANSI_expand_B_(11.00_x_17.00_Inches)"
+     },
+     "22" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ANSI расш. B (17.00 x 11.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_expand_B_Landscape_17.00W_x_11.00H_-_(5,_10)_x_(427,_269)_=109415_MM",
+      "media_group" : 0,
+      "name" : "ANSI_expand_B_(17.00_x_11.00_Inches)"
+     },
+     "23" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI расш. C (17.00 x 22.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_expand_C_Portrait_17.00W_x_22.00H_-_(10,_427)_x_(549,_432)_=227266_MM",
+      "media_group" : 0,
+      "name" : "ANSI_expand_C_(17.00_x_22.00_Inches)"
+     },
+     "24" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ANSI расш. C (22.00 x 17.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_expand_C_Landscape_22.00W_x_17.00H_-_(10,_554)_x_(422,_559)_=225996_MM",
+      "media_group" : 0,
+      "name" : "ANSI_expand_C_(22.00_x_17.00_Inches)"
+     },
+     "25" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI расш. D (22.00 x 34.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_expand_D_Portrait_22.00W_x_34.00H_-_(10,_554)_x_(854,_559)_=462968_MM",
+      "media_group" : 0,
+      "name" : "ANSI_expand_D_(22.00_x_34.00_Inches)"
+     },
+     "26" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ANSI расш. D (34.00 x 22.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_expand_D_Landscape_34.00W_x_22.00H_-_(10,_859)_x_(549,_864)_=459920_MM",
+      "media_group" : 0,
+      "name" : "ANSI_expand_D_(34.00_x_22.00_Inches)"
+     },
+     "27" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI расш. E (34.00 x 44.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_expand_E_Portrait_34.00W_x_44.00H_-_(10,_859)_x_(1108,_864)_=936911_MM",
+      "media_group" : 0,
+      "name" : "ANSI_expand_E_(34.00_x_44.00_Inches)"
+     },
+     "28" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ARCH C (18.00 x 24.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_C_Portrait_18.00W_x_24.00H_-_(5,_17)_x_(452,_593)_=257408_MM",
+      "media_group" : 2,
+      "name" : "ARCH_C_(18.00_x_24.00_Inches)"
+     },
+     "29" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ARCH C (24.00 x 18.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_C_Landscape_24.00W_x_18.00H_-_(5,_17)_x_(605,_440)_=253751_MM",
+      "media_group" : 2,
+      "name" : "ARCH_C_(24.00_x_18.00_Inches)"
+     },
+     "3" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ANSI B (17.00 x 11.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_B_Landscape_17.00W_x_11.00H_-_(5,_17)_x_(427,_262)_=103510_MM",
+      "media_group" : 0,
+      "name" : "ANSI_B_(17.00_x_11.00_Inches)"
+     },
+     "30" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ARCH D (24.00 x 36.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_D_Portrait_24.00W_x_36.00H_-_(5,_17)_x_(605,_897)_=527888_MM",
+      "media_group" : 2,
+      "name" : "ARCH_D_(24.00_x_36.00_Inches)"
+     },
+     "31" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ARCH D (36.00 x 24.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_D_Landscape_36.00W_x_24.00H_-_(5,_17)_x_(909,_593)_=520573_MM",
+      "media_group" : 2,
+      "name" : "ARCH_D_(36.00_x_24.00_Inches)"
+     },
+     "32" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ARCH E (36.00 x 48.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_E_Portrait_36.00W_x_48.00H_-_(5,_17)_x_(909,_1202)_=1071895_MM",
+      "media_group" : 2,
+      "name" : "ARCH_E_(36.00_x_48.00_Inches)"
+     },
+     "33" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ARCH E1 (30.00 x 42.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_E1_Portrait_30.00W_x_42.00H_-_(5,_17)_x_(757,_1050)_=776666_MM",
+      "media_group" : 2,
+      "name" : "ARCH_E1_(30.00_x_42.00_Inches)"
+     },
+     "34" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ARCH без \u043f\u043e\u043bей A (12.00 x 9.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_full_bleed_A_Landscape_12.00W_x_9.00H_-_(,_)_x_(305,_229)_=69677_MM",
+      "media_group" : 0,
+      "name" : "ARCH_full_bleed_A_(12.00_x_9.00_Inches)"
+     },
+     "35" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ARCH без \u043f\u043e\u043bей A (9.00 x 12.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_full_bleed_A_Portrait_9.00W_x_12.00H_-_(,_)_x_(229,_305)_=69677_MM",
+      "media_group" : 0,
+      "name" : "ARCH_full_bleed_A_(9.00_x_12.00_Inches)"
+     },
+     "36" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ARCH без \u043f\u043e\u043bей B (12.00 x 18.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_full_bleed_B_Portrait_12.00W_x_18.00H_-_(,_)_x_(305,_457)_=139355_MM",
+      "media_group" : 0,
+      "name" : "ARCH_full_bleed_B_(12.00_x_18.00_Inches)"
+     },
+     "37" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ARCH без \u043f\u043e\u043bей B (18.00 x 12.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_full_bleed_B_Landscape_18.00W_x_12.00H_-_(,_)_x_(457,_305)_=139355_MM",
+      "media_group" : 0,
+      "name" : "ARCH_full_bleed_B_(18.00_x_12.00_Inches)"
+     },
+     "38" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ARCH без \u043f\u043e\u043bей C (18.00 x 24.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_full_bleed_C_Portrait_18.00W_x_24.00H_-_(,_)_x_(457,_610)_=278709_MM",
+      "media_group" : 0,
+      "name" : "ARCH_full_bleed_C_(18.00_x_24.00_Inches)"
+     },
+     "39" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ARCH без \u043f\u043e\u043bей C (24.00 x 18.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_full_bleed_C_Landscape_24.00W_x_18.00H_-_(,_)_x_(610,_457)_=278709_MM",
+      "media_group" : 0,
+      "name" : "ARCH_full_bleed_C_(24.00_x_18.00_Inches)"
+     },
+     "4" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI C (17.00 x 22.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_C_Portrait_17.00W_x_22.00H_-_(5,_17)_x_(427,_542)_=221361_MM",
+      "media_group" : 0,
+      "name" : "ANSI_C_(17.00_x_22.00_Inches)"
+     },
+     "40" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ARCH без \u043f\u043e\u043bей D (24.00 x 36.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_full_bleed_D_Portrait_24.00W_x_36.00H_-_(,_)_x_(610,_914)_=557418_MM",
+      "media_group" : 0,
+      "name" : "ARCH_full_bleed_D_(24.00_x_36.00_Inches)"
+     },
+     "41" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ARCH без \u043f\u043e\u043bей D (36.00 x 24.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_full_bleed_D_Landscape_36.00W_x_24.00H_-_(,_)_x_(914,_610)_=557418_MM",
+      "media_group" : 0,
+      "name" : "ARCH_full_bleed_D_(36.00_x_24.00_Inches)"
+     },
+     "42" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ARCH без \u043f\u043e\u043bей E (36.00 x 48.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_full_bleed_E_Portrait_36.00W_x_48.00H_-_(,_)_x_(914,_1219)_=1114836_MM",
+      "media_group" : 0,
+      "name" : "ARCH_full_bleed_E_(36.00_x_48.00_Inches)"
+     },
+     "43" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ARCH без \u043f\u043e\u043bей E1 (30.00 x 42.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_full_bleed_E1_Portrait_30.00W_x_42.00H_-_(,_)_x_(762,_1067)_=812902_MM",
+      "media_group" : 0,
+      "name" : "ARCH_full_bleed_E1_(30.00_x_42.00_Inches)"
+     },
+     "44" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ARCH расш. C (18.00 x 24.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_expand_C_Portrait_18.00W_x_24.00H_-_(5,_10)_x_(452,_600)_=263669_MM",
+      "media_group" : 0,
+      "name" : "ARCH_expand_C_(18.00_x_24.00_Inches)"
+     },
+     "45" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ARCH расш. C (24.00 x 18.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_expand_C_Landscape_24.00W_x_18.00H_-_(5,_10)_x_(605,_447)_=262145_MM",
+      "media_group" : 0,
+      "name" : "ARCH_expand_C_(24.00_x_18.00_Inches)"
+     },
+     "46" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ARCH расш. D (24.00 x 36.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_expand_D_Portrait_24.00W_x_36.00H_-_(5,_10)_x_(605,_904)_=536282_MM",
+      "media_group" : 0,
+      "name" : "ARCH_expand_D_(24.00_x_36.00_Inches)"
+     },
+     "47" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ARCH расш. D (36.00 x 24.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_expand_D_Landscape_36.00W_x_24.00H_-_(5,_10)_x_(909,_600)_=533234_MM",
+      "media_group" : 0,
+      "name" : "ARCH_expand_D_(36.00_x_24.00_Inches)"
+     },
+     "48" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ARCH расш. E (36.00 x 48.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_expand_E_Portrait_36.00W_x_48.00H_-_(5,_10)_x_(909,_1209)_=1084556_MM",
+      "media_group" : 0,
+      "name" : "ARCH_expand_E_(36.00_x_48.00_Inches)"
+     },
+     "49" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ARCH расш. E1 (30.00 x 42.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ARCH_expand_E1_Portrait_30.00W_x_42.00H_-_(5,_10)_x_(757,_1057)_=787194_MM",
+      "media_group" : 0,
+      "name" : "ARCH_expand_E1_(30.00_x_42.00_Inches)"
+     },
+     "5" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ANSI C (22.00 x 17.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_C_Landscape_22.00W_x_17.00H_-_(17,_554)_x_(415,_559)_=218313_MM",
+      "media_group" : 0,
+      "name" : "ANSI_C_(22.00_x_17.00_Inches)"
+     },
+     "50" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO A0 (841.00 x 1189.00 \u043c\u043c)",
+      "media_description_name" : "ISO_A0_Portrait_841.00W_x_1189.00H_-_(5,_17)_x_(836,_1172)_=959805_MM",
+      "media_group" : 4,
+      "name" : "ISO_A0_(841.00_x_1189.00_MM)"
+     },
+     "51" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO A1 (594.00 x 841.00 \u043c\u043c)",
+      "media_description_name" : "ISO_A1_Portrait_594.00W_x_841.00H_-_(5,_17)_x_(589,_824)_=471288_MM",
+      "media_group" : 4,
+      "name" : "ISO_A1_(594.00_x_841.00_MM)"
+     },
+     "52" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ISO A1 (841.00 x 594.00 \u043c\u043c)",
+      "media_description_name" : "ISO_A1_Landscape_841.00W_x_594.00H_-_(5,_17)_x_(836,_577)_=465360_MM",
+      "media_group" : 4,
+      "name" : "ISO_A1_(841.00_x_594.00_MM)"
+     },
+     "53" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO A2 (420.00 x 594.00 \u043c\u043c)",
+      "media_description_name" : "ISO_A2_Portrait_420.00W_x_594.00H_-_(5,_17)_x_(415,_577)_=229600_MM",
+      "media_group" : 4,
+      "name" : "ISO_A2_(420.00_x_594.00_MM)"
+     },
+     "54" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ISO A2 (594.00 x 420.00 \u043c\u043c)",
+      "media_description_name" : "ISO_A2_Landscape_594.00W_x_420.00H_-_(5,_17)_x_(589,_403)_=225424_MM",
+      "media_group" : 4,
+      "name" : "ISO_A2_(594.00_x_420.00_MM)"
+     },
+     "55" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO A3 (297.00 x 420.00 \u043c\u043c)",
+      "media_description_name" : "ISO_A3_Portrait_297.00W_x_420.00H_-_(5,_17)_x_(292,_403)_=110782_MM",
+      "media_group" : 4,
+      "name" : "ISO_A3_(297.00_x_420.00_MM)"
+     },
+     "56" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ISO A3 (420.00 x 297.00 \u043c\u043c)",
+      "media_description_name" : "ISO_A3_Landscape_420.00W_x_297.00H_-_(5,_17)_x_(415,_280)_=107830_MM",
+      "media_group" : 4,
+      "name" : "ISO_A3_(420.00_x_297.00_MM)"
+     },
+     "57" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO A4 (210.00 x 297.00 \u043c\u043c)",
+      "media_description_name" : "ISO_A4_Portrait_210.00W_x_297.00H_-_(5,_17)_x_(205,_280)_=52600_MM",
+      "media_group" : 4,
+      "name" : "ISO_A4_(210.00_x_297.00_MM)"
+     },
+     "58" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ISO A4 (297.00 x 210.00 \u043c\u043c)",
+      "media_description_name" : "ISO_A4_Landscape_297.00W_x_210.00H_-_(5,_17)_x_(292,_193)_=50512_MM",
+      "media_group" : 4,
+      "name" : "ISO_A4_(297.00_x_210.00_MM)"
+     },
+     "59" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO expand A0 (841.00 x 1189.00 \u043c\u043c)",
+      "media_description_name" : "ISO_expand_A0_Portrait_841.00W_x_1189.00H_-_(5,_10)_x_(836,_1179)_=971439_MM",
+      "media_group" : 5,
+      "name" : "ISO_expand_A0_(841.00_x_1189.00_MM)"
+     },
+     "6" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI D (22.00 x 34.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_D_Portrait_22.00W_x_34.00H_-_(17,_554)_x_(847,_559)_=455284_MM",
+      "media_group" : 0,
+      "name" : "ANSI_D_(22.00_x_34.00_Inches)"
+     },
+     "60" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO expand A1 (594.00 x 841.00 \u043c\u043c)",
+      "media_description_name" : "ISO_expand_A1_Portrait_594.00W_x_841.00H_-_(5,_10)_x_(589,_831)_=479464_MM",
+      "media_group" : 5,
+      "name" : "ISO_expand_A1_(594.00_x_841.00_MM)"
+     },
+     "61" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ISO expand A1 (841.00 x 594.00 \u043c\u043c)",
+      "media_description_name" : "ISO_expand_A1_Landscape_841.00W_x_594.00H_-_(5,_10)_x_(836,_584)_=476994_MM",
+      "media_group" : 5,
+      "name" : "ISO_expand_A1_(841.00_x_594.00_MM)"
+     },
+     "62" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO expand A2 (420.00 x 594.00 \u043c\u043c)",
+      "media_description_name" : "ISO_expand_A2_Portrait_420.00W_x_594.00H_-_(5,_10)_x_(415,_584)_=235340_MM",
+      "media_group" : 5,
+      "name" : "ISO_expand_A2_(420.00_x_594.00_MM)"
+     },
+     "63" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ISO expand A2 (594.00 x 420.00 \u043c\u043c)",
+      "media_description_name" : "ISO_expand_A2_Landscape_594.00W_x_420.00H_-_(5,_10)_x_(589,_410)_=233600_MM",
+      "media_group" : 5,
+      "name" : "ISO_expand_A2_(594.00_x_420.00_MM)"
+     },
+     "64" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO expand A3 (297.00 x 420.00 \u043c\u043c)",
+      "media_description_name" : "ISO_expand_A3_Portrait_297.00W_x_420.00H_-_(5,_10)_x_(292,_410)_=114800_MM",
+      "media_group" : 5,
+      "name" : "ISO_expand_A3_(297.00_x_420.00_MM)"
+     },
+     "65" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ISO expand A3 (420.00 x 297.00 \u043c\u043c)",
+      "media_description_name" : "ISO_expand_A3_Landscape_420.00W_x_297.00H_-_(5,_10)_x_(415,_287)_=113570_MM",
+      "media_group" : 5,
+      "name" : "ISO_expand_A3_(420.00_x_297.00_MM)"
+     },
+     "66" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO expand A4 (210.00 x 297.00 \u043c\u043c)",
+      "media_description_name" : "ISO_expand_A4_Portrait_210.00W_x_297.00H_-_(5,_10)_x_(205,_287)_=55400_MM",
+      "media_group" : 5,
+      "name" : "ISO_expand_A4_(210.00_x_297.00_MM)"
+     },
+     "67" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ISO expand A4 (297.00 x 210.00 \u043c\u043c)",
+      "media_description_name" : "ISO_expand_A4_Landscape_297.00W_x_210.00H_-_(5,_10)_x_(292,_200)_=54530_MM",
+      "media_group" : 5,
+      "name" : "ISO_expand_A4_(297.00_x_210.00_MM)"
+     },
+     "68" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей 2A0 (1189.00 x 1682.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_2A0_Portrait_1189.00W_x_1682.00H_-_(,_)_x_(1189,_1682)_=1999898_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_2A0_(1189.00_x_1682.00_MM)"
+     },
+     "69" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей 4A0 (1682.00 x 2378.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_4A0_Portrait_1682.00W_x_2378.00H_-_(,_)_x_(1682,_2378)_=3999796_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_4A0_(1682.00_x_2378.00_MM)"
+     },
+     "7" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ANSI D (34.00 x 22.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_D_Landscape_34.00W_x_22.00H_-_(17,_859)_x_(542,_864)_=447969_MM",
+      "media_group" : 0,
+      "name" : "ANSI_D_(34.00_x_22.00_Inches)"
+     },
+     "70" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A5 (148.00 x 210.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_A5_Portrait_148.00W_x_210.00H_-_(,_)_x_(148,_210)_=31080_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_A5_(148.00_x_210.00_MM)"
+     },
+     "71" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A5 (210.00 x 148.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_A5_Landscape_210.00W_x_148.00H_-_(,_)_x_(210,_148)_=31080_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_A5_(210.00_x_148.00_MM)"
+     },
+     "72" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей B0 (1000.00 x 1414.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_B0_Portrait_1000.00W_x_1414.00H_-_(,_)_x_(1000,_1414)_=1414000_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_B0_(1000.00_x_1414.00_MM)"
+     },
+     "73" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей B0 (1414.00 x 1000.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_B0_Landscape_1414.00W_x_1000.00H_-_(,_)_x_(1414,_1000)_=1414000_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_B0_(1414.00_x_1000.00_MM)"
+     },
+     "74" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей B1 (1000.00 x 707.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_B1_Landscape_1000.00W_x_707.00H_-_(,_)_x_(1000,_707)_=707000_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_B1_(1000.00_x_707.00_MM)"
+     },
+     "75" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей B1 (707.00 x 1000.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_B1_Portrait_707.00W_x_1000.00H_-_(,_)_x_(707,_1000)_=707000_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_B1_(707.00_x_1000.00_MM)"
+     },
+     "76" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей B2 (500.00 x 707.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_B2_Portrait_500.00W_x_707.00H_-_(,_)_x_(500,_707)_=353500_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_B2_(500.00_x_707.00_MM)"
+     },
+     "77" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей B2 (707.00 x 500.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_B2_Landscape_707.00W_x_500.00H_-_(,_)_x_(707,_500)_=353500_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_B2_(707.00_x_500.00_MM)"
+     },
+     "78" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей B3 (353.00 x 500.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_B3_Portrait_353.00W_x_500.00H_-_(,_)_x_(353,_500)_=176500_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_B3_(353.00_x_500.00_MM)"
+     },
+     "79" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей B3 (500.00 x 353.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_B3_Landscape_500.00W_x_353.00H_-_(,_)_x_(500,_353)_=176500_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_B3_(500.00_x_353.00_MM)"
+     },
+     "8" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ANSI E (34.00 x 44.00 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_E_Portrait_34.00W_x_44.00H_-_(17,_859)_x_(1101,_864)_=924961_MM",
+      "media_group" : 0,
+      "name" : "ANSI_E_(34.00_x_44.00_Inches)"
+     },
+     "80" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей B4 (250.00 x 353.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_B4_Portrait_250.00W_x_353.00H_-_(,_)_x_(250,_353)_=88250_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_B4_(250.00_x_353.00_MM)"
+     },
+     "81" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей B4 (353.00 x 250.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_B4_Landscape_353.00W_x_250.00H_-_(,_)_x_(353,_250)_=88250_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_B4_(353.00_x_250.00_MM)"
+     },
+     "82" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей B5 (176.00 x 250.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_B5_Portrait_176.00W_x_250.00H_-_(,_)_x_(176,_250)_=44000_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_B5_(176.00_x_250.00_MM)"
+     },
+     "83" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей B5 (250.00 x 176.00 \u043c\u043c)",
+      "media_description_name" : "ISO_full_bleed_B5_Landscape_250.00W_x_176.00H_-_(,_)_x_(250,_176)_=44000_MM",
+      "media_group" : 5,
+      "name" : "ISO_full_bleed_B5_(250.00_x_176.00_MM)"
+     },
+     "9" : 
+     {
+      "caps_type" : 4,
+      "landscape_mode" : true,
+      "localized_name" : "ANSI без \u043f\u043e\u043bей  A (11.00 x 8.50 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "ANSI_full_bleed_A_Landscape_11.00W_x_8.50H_-_(,_)_x_(279,_216)_=60322_MM",
+      "media_group" : 0,
+      "name" : "ANSI_full_bleed_A_(11.00_x_8.50_Inches)"
+     }
+    }
+   }
+  },
+  "meta" : 
+  {
+   "canonical_family_name" : "Autodesk ePlot",
+   "canonical_model_name" : "pdf",
+   "default_system_cfg" : false,
+   "dm_driver_version" : 0,
+   "driver_pathname" : "C:\\Program Files\\Autodesk\\AutoCAD 2024\\drv\\pdfplot16.hdi",
+   "driver_tag_line" : "PDF ePlot - by Autodesk",
+   "driver_type" : 3,
+   "driver_version" : "1.1-16.3.71.0 [v018-1]",
+   "file_only" : true,
+   "friendly_net_name" : "",
+   "locale" : "4B00409",
+   "localized_family_name" : "Autodesk ePlot (PDF)",
+   "localized_model_name" : "DWG To PDF",
+   "model_abilities" : "000550055000",
+   "platform" : "2,10,0",
+   "short_net_name" : "",
+   "show_custom_first" : false,
+   "toolkit_version" : 1,
+   "truetype_as_text" : true,
+   "udm_description" : "",
+   "user_defined_model_basename" : "",
+   "user_defined_model_pathname" : "C:\\Users\\BMAuser\\AppData\\Roaming\\Autodesk\\AutoCAD 2024\\R24.3\\rus\\Plotters\\PMP Files\\PDF_Г\u041eСТ.pmp"
+  },
+  "mod" : 
+  {
+   "media" : 
+   {
+    "abilities" : "500005500500505555000005550000000550000500000500000",
+    "caps_state" : "000000000000000000000000000000000000000000000000000",
+    "size_max_x" : 5080.0,
+    "size_max_y" : 5080.0,
+    "ui_owner" : "11111111111111111111000"
+   }
+  },
+  "udm" : 
+  {
+   "calibration" : 
+   {
+    "_x" : 1.0,
+    "_y" : 1.0
+   },
+   "media" : 
+   {
+    "description" : 
+    {
+     "0" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 420.0,
+      "media_bounds_ury" : 891.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 420.00Шир. x 891.00Д\u043b. - (0, 0) x (420, 891) =374220 \u043c\u043c",
+      "printable_area" : 374220.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 420.0,
+      "printable_bounds_ury" : 891.0
+     },
+     "1" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 1471.0,
+      "media_bounds_ury" : 297.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1471.00Шир. x 297.00Д\u043b. - (0, 0) x (1471, 297) =436887 \u043c\u043c",
+      "printable_area" : 436887.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 1471.0,
+      "printable_bounds_ury" : 297.0
+     },
+     "10" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 297.0,
+      "media_bounds_ury" : 1261.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 297.00Шир. x 1261.00Д\u043b. - (0, 0) x (297, 1261) =374517 \u043c\u043c",
+      "printable_area" : 374517.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 297.0,
+      "printable_bounds_ury" : 1261.0
+     },
+     "11" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 420.0,
+      "media_bounds_ury" : 1486.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 420.00Шир. x 1486.00Д\u043b. - (0, 0) x (420, 1486) =624120 \u043c\u043c",
+      "printable_area" : 624120.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 420.0,
+      "printable_bounds_ury" : 1486.0
+     },
+     "12" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 2378.0,
+      "media_bounds_ury" : 841.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 2378.00Шир. x 841.00Д\u043b. - (0, 0) x (2378, 841) =1999898 \u043c\u043c",
+      "printable_area" : 1999898.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 2378.0,
+      "printable_bounds_ury" : 841.0
+     },
+     "13" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 2080.0,
+      "media_bounds_ury" : 420.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 2080.00Шир. x 420.00Д\u043b. - (0, 0) x (2080, 420) =873600 \u043c\u043c",
+      "printable_area" : 873600.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 2080.0,
+      "printable_bounds_ury" : 420.0
+     },
+     "14" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 1783.0,
+      "media_bounds_ury" : 420.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1783.00Шир. x 420.00Д\u043b. - (0, 0) x (1783, 420) =748860 \u043c\u043c",
+      "printable_area" : 748860.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 1783.0,
+      "printable_bounds_ury" : 420.0
+     },
+     "15" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 420.0,
+      "media_bounds_ury" : 1783.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 420.00Шир. x 1783.00Д\u043b. - (0, 0) x (420, 1783) =748860 \u043c\u043c",
+      "printable_area" : 748860.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 420.0,
+      "printable_bounds_ury" : 1783.0
+     },
+     "16" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 1892.0,
+      "media_bounds_ury" : 297.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1892.00Шир. x 297.00Д\u043b. - (0, 0) x (1892, 297) =561924 \u043c\u043c",
+      "printable_area" : 561924.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 1892.0,
+      "printable_bounds_ury" : 297.0
+     },
+     "17" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 1261.0,
+      "media_bounds_ury" : 594.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1261.00Шир. x 594.00Д\u043b. - (0, 0) x (1261, 594) =749034 \u043c\u043c",
+      "printable_area" : 749034.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 1261.0,
+      "printable_bounds_ury" : 594.0
+     },
+     "18" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 297.0,
+      "media_bounds_ury" : 1892.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 297.00Шир. x 1892.00Д\u043b. - (0, 0) x (297, 1892) =561924 \u043c\u043c",
+      "printable_area" : 561924.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 297.0,
+      "printable_bounds_ury" : 1892.0
+     },
+     "19" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 594.0,
+      "media_bounds_ury" : 1261.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 594.00Шир. x 1261.00Д\u043b. - (0, 0) x (594, 1261) =749034 \u043c\u043c",
+      "printable_area" : 749034.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 594.0,
+      "printable_bounds_ury" : 1261.0
+     },
+     "2" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 891.0,
+      "media_bounds_ury" : 420.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 891.00Шир. x 420.00Д\u043b. - (0, 0) x (891, 420) =374220 \u043c\u043c",
+      "printable_area" : 374220.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 891.0,
+      "printable_bounds_ury" : 420.0
+     },
+     "20" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 841.0,
+      "media_bounds_ury" : 297.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 297.00Шир. x 841.00Д\u043b. - (0, 0) x (297, 841) =249777 \u043c\u043c",
+      "printable_area" : 249777.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 841.0,
+      "printable_bounds_ury" : 297.0
+     },
+     "21" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 594.0,
+      "media_bounds_ury" : 1682.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 594.00Шир. x 1682.00Д\u043b. - (0, 0) x (594, 1682) =999108 \u043c\u043c",
+      "printable_area" : 999108.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 594.0,
+      "printable_bounds_ury" : 1682.0
+     },
+     "22" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 1783.0,
+      "media_bounds_ury" : 841.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1783.00Шир. x 841.00Д\u043b. - (0, 0) x (1783, 841) =1499503 \u043c\u043c",
+      "printable_area" : 1499503.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 1783.0,
+      "printable_bounds_ury" : 841.0
+     },
+     "23" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 841.0,
+      "media_bounds_ury" : 1783.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 841.00Шир. x 1783.00Д\u043b. - (0, 0) x (841, 1783) =1499503 \u043c\u043c",
+      "printable_area" : 1499503.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 841.0,
+      "printable_bounds_ury" : 1783.0
+     },
+     "24" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 297.0,
+      "media_bounds_ury" : 630.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 297.00Шир. x 630.00Д\u043b. - (0, 0) x (297, 630) =187110 \u043c\u043c",
+      "printable_area" : 187110.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 297.0,
+      "printable_bounds_ury" : 630.0
+     },
+     "25" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 841.0,
+      "media_bounds_ury" : 2378.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 841.00Шир. x 2378.00Д\u043b. - (0, 0) x (841, 2378) =1999898 \u043c\u043c",
+      "printable_area" : 1999898.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 841.0,
+      "printable_bounds_ury" : 2378.0
+     },
+     "26" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 1682.0,
+      "media_bounds_ury" : 1189.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1682.00Шир. x 1189.00Д\u043b. - (0, 0) x (1682, 1189) =1999898 \u043c\u043c",
+      "printable_area" : 1999898.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 1682.0,
+      "printable_bounds_ury" : 1189.0
+     },
+     "27" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 1189.0,
+      "media_bounds_ury" : 1682.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 1189.00Шир. x 1682.00Д\u043b. - (0, 0) x (1189, 1682) =1999898 \u043c\u043c",
+      "printable_area" : 1999898.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 1189.0,
+      "printable_bounds_ury" : 1682.0
+     },
+     "28" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 2523.0,
+      "media_bounds_ury" : 1189.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 2523.00Шир. x 1189.00Д\u043b. - (0, 0) x (2523, 1189) =2999847 \u043c\u043c",
+      "printable_area" : 2999847.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 2523.0,
+      "printable_bounds_ury" : 1189.0
+     },
+     "29" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 1189.0,
+      "media_bounds_ury" : 2523.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 1189.00Шир. x 2523.00Д\u043b. - (0, 0) x (1189, 2523) =2999847 \u043c\u043c",
+      "printable_area" : 2999847.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 1189.0,
+      "printable_bounds_ury" : 2523.0
+     },
+     "3" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 630.0,
+      "media_bounds_ury" : 297.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 630.00Шир. x 297.00Д\u043b. - (0, 0) x (630, 297) =187110 \u043c\u043c",
+      "printable_area" : 187110.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 630.0,
+      "printable_bounds_ury" : 297.0
+     },
+     "30" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 1600.0,
+      "media_bounds_ury" : 1280.0,
+      "name" : "User-1",
+      "printable_area" : 2048000.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 1600.0,
+      "printable_bounds_ury" : 1280.0
+     },
+     "31" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 594.0,
+      "media_bounds_ury" : 2102.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 594.00Шир. x 2102.00Д\u043b. - (0, 0) x (594, 2102) =1248588 \u043c\u043c",
+      "printable_area" : 1248588.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 594.0,
+      "printable_bounds_ury" : 2102.0
+     },
+     "32" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 297.0,
+      "media_bounds_ury" : 841.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 841.00Шир. x 297.00Д\u043b. - (0, 0) x (841, 297) =249777 \u043c\u043c",
+      "printable_area" : 249777.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 297.0,
+      "printable_bounds_ury" : 841.0
+     },
+     "33" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 1051.0,
+      "media_bounds_ury" : 297.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1051.00Шир. x 297.00Д\u043b. - (0, 0) x (1051, 297) =312147 \u043c\u043c",
+      "printable_area" : 312147.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 1051.0,
+      "printable_bounds_ury" : 297.0
+     },
+     "34" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 297.0,
+      "media_bounds_ury" : 1051.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 297.00Шир. x 1051.00Д\u043b. - (0, 0) x (297, 1051) =312147 \u043c\u043c",
+      "printable_area" : 312147.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 297.0,
+      "printable_bounds_ury" : 1051.0
+     },
+     "35" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 420.0,
+      "media_bounds_ury" : 2080.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 420.00Шир. x 2080.00Д\u043b. - (0, 0) x (420, 2080) =873600 \u043c\u043c",
+      "printable_area" : 873600.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 420.0,
+      "printable_bounds_ury" : 2080.0
+     },
+     "36" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 297.0,
+      "media_bounds_ury" : 1471.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 297.00Шир. x 1471.00Д\u043b. - (0, 0) x (297, 1471) =436887 \u043c\u043c",
+      "printable_area" : 436887.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 297.0,
+      "printable_bounds_ury" : 1471.0
+     },
+     "37" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 1682.0,
+      "media_bounds_ury" : 297.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1682.00Шир. x 297.00Д\u043b. - (0, 0) x (1682, 297) =499554 \u043c\u043c",
+      "printable_area" : 499554.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 1682.0,
+      "printable_bounds_ury" : 297.0
+     },
+     "38" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 297.0,
+      "media_bounds_ury" : 1682.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 297.00Шир. x 1682.00Д\u043b. - (0, 0) x (297, 1682) =499554 \u043c\u043c",
+      "printable_area" : 499554.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 297.0,
+      "printable_bounds_ury" : 1682.0
+     },
+     "4" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 1682.0,
+      "media_bounds_ury" : 594.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1682.00Шир. x 594.00Д\u043b. - (0, 0) x (1682, 594) =999108 \u043c\u043c",
+      "printable_area" : 999108.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 1682.0,
+      "printable_bounds_ury" : 594.0
+     },
+     "5" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 2102.0,
+      "media_bounds_ury" : 594.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 2102.00Шир. x 594.00Д\u043b. - (0, 0) x (2102, 594) =1248588 \u043c\u043c",
+      "printable_area" : 1248588.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 2102.0,
+      "printable_bounds_ury" : 594.0
+     },
+     "6" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 1189.0,
+      "media_bounds_ury" : 420.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1189.00Шир. x 420.00Д\u043b. - (0, 0) x (1189, 420) =499380 \u043c\u043c",
+      "printable_area" : 499380.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 1189.0,
+      "printable_bounds_ury" : 420.0
+     },
+     "7" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 420.0,
+      "media_bounds_ury" : 1189.0,
+      "name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 420.00Шир. x 1189.00Д\u043b. - (0, 0) x (420, 1189) =499380 \u043c\u043c",
+      "printable_area" : 499380.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 420.0,
+      "printable_bounds_ury" : 1189.0
+     },
+     "8" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 1261.0,
+      "media_bounds_ury" : 297.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1261.00Шир. x 297.00Д\u043b. - (0, 0) x (1261, 297) =374517 \u043c\u043c",
+      "printable_area" : 374517.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 1261.0,
+      "printable_bounds_ury" : 297.0
+     },
+     "9" : 
+     {
+      "caps_type" : 2,
+      "dimensional" : true,
+      "media_bounds_urx" : 1486.0,
+      "media_bounds_ury" : 420.0,
+      "name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1486.00Шир. x 420.00Д\u043b. - (0, 0) x (1486, 420) =624120 \u043c\u043c",
+      "printable_area" : 624120.0,
+      "printable_bounds_llx" : 0.0,
+      "printable_bounds_lly" : 0.0,
+      "printable_bounds_urx" : 1486.0,
+      "printable_bounds_ury" : 420.0
+     }
+    },
+    "size" : 
+    {
+     "0" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A0x2 (1189.00 x 1682.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 1189.00Шир. x 1682.00Д\u043b. - (0, 0) x (1189, 1682) =1999898 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (1189.00 x 1682.00\u043c\u043c)"
+     },
+     "1" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A0x2 (1682.00 x 1189.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1682.00Шир. x 1189.00Д\u043b. - (0, 0) x (1682, 1189) =1999898 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (1682.00 x 1189.00\u043c\u043c)"
+     },
+     "10" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A2x4 (1682.00 x 594.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1682.00Шир. x 594.00Д\u043b. - (0, 0) x (1682, 594) =999108 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (1682.00 x 594.00\u043c\u043c)"
+     },
+     "11" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A2x4 (594.00 x 1682.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 594.00Шир. x 1682.00Д\u043b. - (0, 0) x (594, 1682) =999108 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (594.00 x 1682.00\u043c\u043c)"
+     },
+     "12" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A2x5 (2102.00 x 594.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 2102.00Шир. x 594.00Д\u043b. - (0, 0) x (2102, 594) =1248588 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (2102.00 x 594.00\u043c\u043c)"
+     },
+     "13" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A2x5 (594.00 x 2102.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 594.00Шир. x 2102.00Д\u043b. - (0, 0) x (594, 2102) =1248588 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (594.00 x 2102.00\u043c\u043c)"
+     },
+     "14" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A3x3 (420.00 x 891.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 420.00Шир. x 891.00Д\u043b. - (0, 0) x (420, 891) =374220 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (420.00 x 891.00\u043c\u043c)"
+     },
+     "15" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A3x3 (891.00 x 420.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 891.00Шир. x 420.00Д\u043b. - (0, 0) x (891, 420) =374220 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (891.00 x 420.00\u043c\u043c)"
+     },
+     "16" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A3x4 (1189.00 x 420.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1189.00Шир. x 420.00Д\u043b. - (0, 0) x (1189, 420) =499380 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (1189.00 x 420.00\u043c\u043c)"
+     },
+     "17" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A3x4 (420.00 x 1189.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 420.00Шир. x 1189.00Д\u043b. - (0, 0) x (420, 1189) =499380 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (420.00 x 1189.00\u043c\u043c)"
+     },
+     "18" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A3x5 (1486.00 x 420.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1486.00Шир. x 420.00Д\u043b. - (0, 0) x (1486, 420) =624120 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (1486.00 x 420.00\u043c\u043c)"
+     },
+     "19" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A3x5 (420.00 x 1486.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 420.00Шир. x 1486.00Д\u043b. - (0, 0) x (420, 1486) =624120 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (420.00 x 1486.00\u043c\u043c)"
+     },
+     "2" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A0x3 (1189.00 x 2523.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 1189.00Шир. x 2523.00Д\u043b. - (0, 0) x (1189, 2523) =2999847 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (1189.00 x 2523.00\u043c\u043c)"
+     },
+     "20" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A3x6 (1783.00 x 420.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1783.00Шир. x 420.00Д\u043b. - (0, 0) x (1783, 420) =748860 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (1783.00 x 420.00\u043c\u043c)"
+     },
+     "21" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A3x6 (420.00 x 1783.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 420.00Шир. x 1783.00Д\u043b. - (0, 0) x (420, 1783) =748860 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (420.00 x 1783.00\u043c\u043c)"
+     },
+     "22" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A3x7 (2080.00 x 420.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 2080.00Шир. x 420.00Д\u043b. - (0, 0) x (2080, 420) =873600 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (2080.00 x 420.00\u043c\u043c)"
+     },
+     "23" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A3x7 (420.00 x 2080.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 420.00Шир. x 2080.00Д\u043b. - (0, 0) x (420, 2080) =873600 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (420.00 x 2080.00\u043c\u043c)"
+     },
+     "24" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A4x3 (297.00 x 630.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 297.00Шир. x 630.00Д\u043b. - (0, 0) x (297, 630) =187110 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (297.00 x 630.00\u043c\u043c)"
+     },
+     "25" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A4x3 (630.00 x 297.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 630.00Шир. x 297.00Д\u043b. - (0, 0) x (630, 297) =187110 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (630.00 x 297.00\u043c\u043c)"
+     },
+     "26" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A4x4 (297.00 x 841.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 841.00Шир. x 297.00Д\u043b. - (0, 0) x (841, 297) =249777 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (841.00 x 297.00\u043c\u043c)"
+     },
+     "27" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A4x4 (841.00 x 297.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 297.00Шир. x 841.00Д\u043b. - (0, 0) x (297, 841) =249777 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (297.00 x 841.00\u043c\u043c)"
+     },
+     "28" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A4x5 (1051.00 x 297.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1051.00Шир. x 297.00Д\u043b. - (0, 0) x (1051, 297) =312147 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (1051.00 x 297.00\u043c\u043c)"
+     },
+     "29" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A4x5 (297.00 x 1051.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 297.00Шир. x 1051.00Д\u043b. - (0, 0) x (297, 1051) =312147 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (297.00 x 1051.00\u043c\u043c)"
+     },
+     "3" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A0x3 (2523.00 x 1189.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 2523.00Шир. x 1189.00Д\u043b. - (0, 0) x (2523, 1189) =2999847 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (2523.00 x 1189.00\u043c\u043c)"
+     },
+     "30" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A4x6 (1261.00 x 297.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1261.00Шир. x 297.00Д\u043b. - (0, 0) x (1261, 297) =374517 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (1261.00 x 297.00\u043c\u043c)"
+     },
+     "31" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A4x6 (297.00 x 1261.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 297.00Шир. x 1261.00Д\u043b. - (0, 0) x (297, 1261) =374517 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (297.00 x 1261.00\u043c\u043c)"
+     },
+     "32" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A4x7 (1471.00 x 297.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1471.00Шир. x 297.00Д\u043b. - (0, 0) x (1471, 297) =436887 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (1471.00 x 297.00\u043c\u043c)"
+     },
+     "33" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A4x7 (297.00 x 1471.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 297.00Шир. x 1471.00Д\u043b. - (0, 0) x (297, 1471) =436887 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (297.00 x 1471.00\u043c\u043c)"
+     },
+     "34" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A4x8 (1682.00 x 297.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1682.00Шир. x 297.00Д\u043b. - (0, 0) x (1682, 297) =499554 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (1682.00 x 297.00\u043c\u043c)"
+     },
+     "35" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A4x8 (297.00 x 1682.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 297.00Шир. x 1682.00Д\u043b. - (0, 0) x (297, 1682) =499554 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (297.00 x 1682.00\u043c\u043c)"
+     },
+     "36" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A4x9 (1892.00 x 297.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1892.00Шир. x 297.00Д\u043b. - (0, 0) x (1892, 297) =561924 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (1892.00 x 297.00\u043c\u043c)"
+     },
+     "37" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A4x9 (297.00 x 1892.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 297.00Шир. x 1892.00Д\u043b. - (0, 0) x (297, 1892) =561924 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (297.00 x 1892.00\u043c\u043c)"
+     },
+     "38" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "\u041fред\u044bдущий ф\u043eр\u043cат \u043bиста  (62.99 x 50.39 д\u044eй\u043c\u043eв)",
+      "media_description_name" : "User-1",
+      "media_group" : 14,
+      "name" : "User-1"
+     },
+     "4" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A1x3 (1783.00 x 841.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1783.00Шир. x 841.00Д\u043b. - (0, 0) x (1783, 841) =1499503 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (1783.00 x 841.00\u043c\u043c)"
+     },
+     "5" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A1x3 (841.00 x 1783.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 841.00Шир. x 1783.00Д\u043b. - (0, 0) x (841, 1783) =1499503 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (841.00 x 1783.00\u043c\u043c)"
+     },
+     "6" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A1x4 (2378.00 x 841.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 2378.00Шир. x 841.00Д\u043b. - (0, 0) x (2378, 841) =1999898 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (2378.00 x 841.00\u043c\u043c)"
+     },
+     "7" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A1x4 (841.00 x 2378.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 841.00Шир. x 2378.00Д\u043b. - (0, 0) x (841, 2378) =1999898 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (841.00 x 2378.00\u043c\u043c)"
+     },
+     "8" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : true,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A2x3 (1261.00 x 594.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric А\u043b\u044cб\u043e\u043c\u043dа\u044f 1261.00Шир. x 594.00Д\u043b. - (0, 0) x (1261, 594) =749034 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (1261.00 x 594.00\u043c\u043c)"
+     },
+     "9" : 
+     {
+      "caps_type" : 2,
+      "landscape_mode" : false,
+      "localized_name" : "ISO без \u043f\u043e\u043bей A2x3 (594.00 x 1261.00 \u043c\u043c)",
+      "media_description_name" : "UserDefinedMetric \u041a\u043dиж\u043dа\u044f 594.00Шир. x 1261.00Д\u043b. - (0, 0) x (594, 1261) =749034 \u043c\u043c",
+      "media_group" : 15,
+      "name" : "UserDefinedMetric (594.00 x 1261.00\u043c\u043c)"
+     }
+    }
+   }
+  }
+ },
+ "subver" : "json",
+ "version" : 0.01
+}
