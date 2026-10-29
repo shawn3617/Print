@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QPushButton, QComboBox,
     QLabel, QHeaderView, QCheckBox, QGroupBox, QFormLayout,
     QMessageBox, QFileDialog, QAbstractItemView, QDialog, QProgressBar,
-    QLineEdit, QSizePolicy
+    QLineEdit, QSizePolicy, QListView
 )
 from PySide6.QtCore import Qt, Signal, QMimeData
 from PySide6.QtGui import QDrag
@@ -208,7 +208,33 @@ class PrintManagerUI(QMainWindow):
             QGroupBox { color: #cdd6f4; font-size: 14px; font-weight: bold; border: 1px solid #45475a; border-radius: 8px; margin-top: 15px; }
             QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; }
             QComboBox { background-color: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 5px; font-size: 14px; }
-            QComboBox::drop-down { border: none; }
+            QComboBox:hover { border: 1px solid #74c7ec; }
+            QComboBox:focus { border: 1px solid #89b4fa; }
+            QComboBox::drop-down { border: none; width: 20px; }
+            QComboBox QAbstractItemView {
+                background-color: #1e1e2e;
+                color: #cdd6f4;
+                selection-background-color: #45475a;
+                selection-color: #ffffff;
+                border: 1px solid #45475a;
+                border-radius: 6px;
+                padding: 4px;
+                outline: none;
+            }
+            QComboBox QAbstractItemView::item {
+                color: #cdd6f4;
+                min-height: 26px;
+                padding: 4px 8px;
+                border-radius: 4px;
+            }
+            QComboBox QAbstractItemView::item:hover {
+                background-color: #313244;
+                color: #ffffff;
+            }
+            QComboBox QAbstractItemView::item:selected {
+                background-color: #45475a;
+                color: #ffffff;
+            }
             QLineEdit { background-color: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
             QLineEdit:focus { border: 1px solid #89b4fa; }
             QCheckBox { color: #cdd6f4; font-size: 13px; spacing: 6px; }
@@ -261,6 +287,7 @@ class PrintManagerUI(QMainWindow):
         
         top_bar.addWidget(QLabel("Источник:"))
         self.combo_source = QComboBox()
+        self.combo_source.setView(QListView())
         self.combo_source.addItems(["Модель (Model Space)", "Листы (Layouts)"])
         self.combo_source.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.combo_source.setMinimumContentsLength(6)
@@ -327,6 +354,7 @@ class PrintManagerUI(QMainWindow):
         filter_bar.addWidget(lbl_fmt)
 
         self.combo_filter_format = QComboBox()
+        self.combo_filter_format.setView(QListView())
         self.combo_filter_format.addItem("Все форматы")
         self.combo_filter_format.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.combo_filter_format.setMinimumContentsLength(8)
@@ -472,6 +500,7 @@ class PrintManagerUI(QMainWindow):
         form_layout.addRow(QLabel("Режим:"), self.combo_mode)
 
         for cb in [self.combo_printers, self.combo_papers, self.combo_style, self.combo_mode]:
+            cb.setView(QListView())
             cb.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
             cb.setMinimumContentsLength(8)
 

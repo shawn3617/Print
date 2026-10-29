@@ -15,6 +15,7 @@ from core.resource_utils import get_resource_path
 
 def main():
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")
     app.setFont(QFont("Segoe UI", 10))
 
     icon_path = get_resource_path("autocad_to_pdf_icon.ico")
