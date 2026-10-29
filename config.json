@@ -5,5 +5,16 @@
   "merge_mode": "В один файл (PDF)",
   "open_after_print": true,
   "sync_autocad": true,
-  "source_mode": "Модель (Model Space)"
+  "source_mode": "Модель (Model Space)",
+  "table_column_widths": [
+    65,
+    64,
+    181,
+    260,
+    220,
+    200,
+    75,
+    140,
+    90
+  ]
 }

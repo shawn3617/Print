@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QPushButton, QComboBox,
     QLabel, QHeaderView, QCheckBox, QGroupBox, QFormLayout,
     QMessageBox, QFileDialog, QAbstractItemView, QDialog, QProgressBar,
-    QLineEdit
+    QLineEdit, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal, QMimeData
 from PySide6.QtGui import QDrag
@@ -379,76 +379,79 @@ class PrintManagerUI(QMainWindow):
         left_layout.addWidget(self.table)
 
 
-        # Панель управления порядком и выбором листов (2 строки для компактности)
-        table_tools_row1 = QHBoxLayout()
-        table_tools_row1.setSpacing(8)
+        # Панель управления порядком и выбором листов (адаптивная: 1 ряд при широком окне, 2 при узком)
+        self.table_tools_container = QWidget()
+        self.table_tools_container.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.table_tools_vbox = QVBoxLayout(self.table_tools_container)
+        self.table_tools_vbox.setContentsMargins(0, 0, 0, 0)
+        self.table_tools_vbox.setSpacing(8)
 
-        btn_select_all = QPushButton("Выбрать все")
-        btn_select_all.setProperty("cssClass", "btn_tool")
-        btn_select_all.clicked.connect(lambda: self.select_all_rows(True))
-        table_tools_row1.addWidget(btn_select_all)
+        self.table_tools_row1_widget = QWidget()
+        self.table_tools_row1 = QHBoxLayout(self.table_tools_row1_widget)
+        self.table_tools_row1.setContentsMargins(0, 0, 0, 0)
+        self.table_tools_row1.setSpacing(8)
 
-        btn_deselect_all = QPushButton("Снять все")
-        btn_deselect_all.setProperty("cssClass", "btn_tool")
-        btn_deselect_all.clicked.connect(lambda: self.select_all_rows(False))
-        table_tools_row1.addWidget(btn_deselect_all)
+        self.table_tools_row2_widget = QWidget()
+        self.table_tools_row2 = QHBoxLayout(self.table_tools_row2_widget)
+        self.table_tools_row2.setContentsMargins(0, 0, 0, 0)
+        self.table_tools_row2.setSpacing(8)
 
-        btn_sort_num = QPushButton("По номерам")
-        btn_sort_num.setProperty("cssClass", "btn_tool")
-        btn_sort_num.setToolTip("Сбросить ручной порядок и отсортировать по возрастанию номеров листов")
-        btn_sort_num.clicked.connect(self.sort_by_sheet_number)
-        table_tools_row1.addWidget(btn_sort_num)
+        self.table_tools_vbox.addWidget(self.table_tools_row1_widget)
+        self.table_tools_vbox.addWidget(self.table_tools_row2_widget)
 
-        btn_export = QPushButton("В Excel / CSV...")
-        btn_export.setProperty("cssClass", "btn_tool")
-        btn_export.setToolTip("Экспортировать ведомость листов таблицы в Excel (.xlsx) или CSV")
-        btn_export.clicked.connect(self.export_sheet_list_dialog)
-        table_tools_row1.addWidget(btn_export)
+        self.btn_select_all = QPushButton("Выбрать все")
+        self.btn_select_all.setProperty("cssClass", "btn_tool")
+        self.btn_select_all.clicked.connect(lambda: self.select_all_rows(True))
 
-        table_tools_row1.addStretch()
-        left_layout.addLayout(table_tools_row1)
+        self.btn_deselect_all = QPushButton("Снять все")
+        self.btn_deselect_all.setProperty("cssClass", "btn_tool")
+        self.btn_deselect_all.clicked.connect(lambda: self.select_all_rows(False))
 
-        table_tools_row2 = QHBoxLayout()
-        table_tools_row2.setSpacing(8)
+        self.btn_sort_num = QPushButton("По номерам")
+        self.btn_sort_num.setProperty("cssClass", "btn_tool")
+        self.btn_sort_num.setToolTip("Сбросить ручной порядок и отсортировать по возрастанию номеров листов")
+        self.btn_sort_num.clicked.connect(self.sort_by_sheet_number)
+
+        self.btn_export = QPushButton("В Excel / CSV...")
+        self.btn_export.setProperty("cssClass", "btn_tool")
+        self.btn_export.setToolTip("Экспортировать ведомость листов таблицы в Excel (.xlsx) или CSV")
+        self.btn_export.clicked.connect(self.export_sheet_list_dialog)
 
         self.btn_move_up = QPushButton("▲ Вверх (Ctrl+↑)")
         self.btn_move_up.setProperty("cssClass", "btn_tool")
         self.btn_move_up.setToolTip("Поднять выбранный лист выше в очереди печати")
         self.btn_move_up.clicked.connect(self.move_row_up)
-        table_tools_row2.addWidget(self.btn_move_up)
 
         self.btn_move_down = QPushButton("▼ Вниз (Ctrl+↓)")
         self.btn_move_down.setProperty("cssClass", "btn_tool")
         self.btn_move_down.setToolTip("Опустить выбранный лист ниже в очереди печати")
         self.btn_move_down.clicked.connect(self.move_row_down)
-        table_tools_row2.addWidget(self.btn_move_down)
-
-        table_tools_row2.addStretch()
 
         self.chk_sync_acad = QCheckBox("Подсветка в AutoCAD")
         self.chk_sync_acad.setChecked(True)
         self.chk_sync_acad.setToolTip("Автоматически центрировать и подсвечивать выбранную рамку в AutoCAD при клике или переходе стрелками")
         self.chk_sync_acad.toggled.connect(lambda _: self.save_settings())
-        table_tools_row2.addWidget(self.chk_sync_acad)
 
-        btn_show_acad = QPushButton("В AutoCAD")
-        btn_show_acad.setProperty("cssClass", "btn_tool")
-        btn_show_acad.setToolTip("Центрировать выбранную рамку в окне AutoCAD и развернуть окно")
-        btn_show_acad.clicked.connect(self.show_current_frame_in_autocad)
-        table_tools_row2.addWidget(btn_show_acad)
+        self.btn_show_acad = QPushButton("В AutoCAD")
+        self.btn_show_acad.setProperty("cssClass", "btn_tool")
+        self.btn_show_acad.setToolTip("Центрировать выбранную рамку в окне AutoCAD и развернуть окно")
+        self.btn_show_acad.clicked.connect(self.show_current_frame_in_autocad)
 
-        left_layout.addLayout(table_tools_row2)
+        self._is_single_row_tools = None
+        self.update_table_tools_layout(self.width())
+
+        left_layout.addWidget(self.table_tools_container)
         main_layout.addLayout(left_layout, stretch=1)
 
-        # ПРАВАЯ ЧАСТЬ (фиксированная компактная панель настроек)
+        # ПРАВАЯ ЧАСТЬ (настройки печати, расширенная панель)
         right_widget = QWidget()
-        right_widget.setMinimumWidth(240)
-        right_widget.setMaximumWidth(310)
+        right_widget.setMinimumWidth(300)
+        right_widget.setMaximumWidth(360)
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
         group_printer = QGroupBox("Настройки печати")
         form_layout = QFormLayout(group_printer)
-        form_layout.setSpacing(12)
+        form_layout.setSpacing(14)
         
         self.combo_printers = QComboBox()
         self.combo_printers.currentTextChanged.connect(self.on_printer_changed)
@@ -1151,6 +1154,42 @@ class PrintManagerUI(QMainWindow):
         row = self.table.currentRow()
         if 0 <= row < self.table.rowCount() - 1:
             self.move_row(row, row + 1)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_table_tools_layout(event.size().width())
+
+    def update_table_tools_layout(self, total_width: int):
+        """Адаптивное переключение кнопок под таблицей: 1 ряд при широком окне, 2 при узком."""
+        single = (total_width >= 1250)
+        if getattr(self, "_is_single_row_tools", None) == single:
+            return
+        self._is_single_row_tools = single
+
+        while self.table_tools_row1.count():
+            self.table_tools_row1.takeAt(0)
+        while self.table_tools_row2.count():
+            self.table_tools_row2.takeAt(0)
+
+        if single:
+            self.table_tools_row2_widget.setVisible(False)
+            for w in [self.btn_select_all, self.btn_deselect_all, self.btn_sort_num,
+                      self.btn_export, self.btn_move_up, self.btn_move_down]:
+                self.table_tools_row1.addWidget(w)
+            self.table_tools_row1.addStretch()
+            self.table_tools_row1.addWidget(self.chk_sync_acad)
+            self.table_tools_row1.addWidget(self.btn_show_acad)
+        else:
+            self.table_tools_row2_widget.setVisible(True)
+            for w in [self.btn_select_all, self.btn_deselect_all, self.btn_sort_num, self.btn_export]:
+                self.table_tools_row1.addWidget(w)
+            self.table_tools_row1.addStretch()
+
+            for w in [self.btn_move_up, self.btn_move_down]:
+                self.table_tools_row2.addWidget(w)
+            self.table_tools_row2.addStretch()
+            self.table_tools_row2.addWidget(self.chk_sync_acad)
+            self.table_tools_row2.addWidget(self.btn_show_acad)
 
     def on_column_resized(self, logical_index, old_size, new_size):
         if getattr(self, "_is_loading_config", False):

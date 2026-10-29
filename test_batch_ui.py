@@ -141,6 +141,20 @@ class TestBatchUI(unittest.TestCase):
         self.mock_config.set.assert_called_with("table_column_widths", [header.sectionSize(i) for i in range(self.win.table.columnCount())])
         self.mock_config.save.assert_called()
 
+    def test_responsive_bottom_buttons_layout(self):
+        # При достаточной ширине (>= 1250) все кнопки выстраиваются в один ряд
+        self.win.update_table_tools_layout(1300)
+        self.assertTrue(self.win._is_single_row_tools)
+        self.assertTrue(self.win.table_tools_row2_widget.isHidden())
+        self.assertEqual(self.win.table_tools_row1.count(), 9)
+
+        # При узком окне (< 1250) кнопки делятся на 2 ряда
+        self.win.update_table_tools_layout(1000)
+        self.assertFalse(self.win._is_single_row_tools)
+        self.assertFalse(self.win.table_tools_row2_widget.isHidden())
+        self.assertEqual(self.win.table_tools_row1.count(), 5)
+        self.assertEqual(self.win.table_tools_row2.count(), 5)
+
 
 if __name__ == "__main__":
     unittest.main()
