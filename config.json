@@ -8,8 +8,8 @@
   "source_mode": "Модель (Model Space)",
   "table_column_widths": [
     65,
-    64,
-    181,
+    60,
+    202,
     260,
     220,
     200,
@@ -17,5 +17,5 @@
     140,
     90
   ],
-  "theme": "autocad_dark"
+  "theme": "dark_catppuccin"
 }
