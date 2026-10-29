@@ -17,5 +17,6 @@
     140,
     131
   ],
-  "theme": "dark_catppuccin"
+  "theme": "dark_catppuccin",
+  "hidden_columns": []
 }
