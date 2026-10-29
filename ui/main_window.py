@@ -706,17 +706,68 @@ class PrintManagerUI(QMainWindow):
         self.combo_papers.addItems(papers)
         
         # Пытаемся восстановить сохраненный или ISO full bleed A2
+        # Восстановление сохраненного формата (игнорируя устаревший случайный B5)
         saved_paper = self.config_manager.get("fallback_paper", "")
+        if isinstance(saved_paper, str) and ("b5" in saved_paper.lower() or "в5" in saved_paper.lower()):
+            saved_paper = ""
+
         idx_saved = -1
         if isinstance(saved_paper, str) and saved_paper:
             idx_saved = self.combo_papers.findText(saved_paper)
         if idx_saved >= 0:
             self.combo_papers.setCurrentIndex(idx_saved)
         else:
-            for i, paper in enumerate(papers):
-                if "A2" in paper and "full bleed" in paper.lower():
-                    self.combo_papers.setCurrentIndex(i)
+            # Ищем наилучший резервный формат (приоритет: А3 без полей -> любой А3 -> А1 без полей -> любой А1 -> А2)
+            chosen_idx = -1
+
+            def is_bleed(p_name: str) -> bool:
+                pl = p_name.lower()
+                return "без полей" in pl or "full bleed" in pl
+
+            # 1. А3 альбомный без полей (420 x 297)
+            for i, p in enumerate(papers):
+                pl = p.lower()
+                if ("a3" in pl or "а3" in pl) and is_bleed(p) and "420" in pl:
+                    chosen_idx = i
                     break
+            # 2. Любой А3 без полей
+            if chosen_idx < 0:
+                for i, p in enumerate(papers):
+                    pl = p.lower()
+                    if ("a3" in pl or "а3" in pl) and is_bleed(p):
+                        chosen_idx = i
+                        break
+            # 3. Любой А3
+            if chosen_idx < 0:
+                for i, p in enumerate(papers):
+                    pl = p.lower()
+                    if "a3" in pl or "а3" in pl:
+                        chosen_idx = i
+                        break
+            # 4. А1 без полей
+            if chosen_idx < 0:
+                for i, p in enumerate(papers):
+                    pl = p.lower()
+                    if ("a1" in pl or "а1" in pl) and is_bleed(p):
+                        chosen_idx = i
+                        break
+            # 5. Любой А1
+            if chosen_idx < 0:
+                for i, p in enumerate(papers):
+                    pl = p.lower()
+                    if "a1" in pl or "а1" in pl:
+                        chosen_idx = i
+                        break
+            # 6. А2 без полей
+            if chosen_idx < 0:
+                for i, p in enumerate(papers):
+                    pl = p.lower()
+                    if ("a2" in pl or "а2" in pl) and is_bleed(p):
+                        chosen_idx = i
+                        break
+
+            if chosen_idx >= 0:
+                self.combo_papers.setCurrentIndex(chosen_idx)
         self.combo_papers.blockSignals(False)
                 
     def scan_frames(self):
