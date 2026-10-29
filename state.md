@@ -114,7 +114,10 @@
   - В таблицу листов `ui/main_window.py` добавлены 3 новые колонки с всплывающими подсказками (tooltips) для длинных строк.
   - Поиск и фильтрация таблицы расширены на новые графы.
   - Экспорт в Excel и CSV (`core/exporter.py`) обновлен под новые колонки.
-- Обновлены тесты `test_polyline_logic.py`, `test_batch_ui.py`, `test_exporter.py`. Все 65 тестов проходят успешно.
+- Извлечение граф 1, 2, 3 штампа добавлено также для **рамок-блоков** (`BlockParser`):
+  - В `core/lisp/block_export.lsp` добавлена выгрузка атрибутов блока в словарь `attrs` (cp1251);
+  - В `parsers/block_parser.py` настроен маппинг тегов (`SHIFR`, `OBJECT`, `BUILDING` и русских аналогов) на графы 1, 2, 3 в LISP- и COM-путях.
+- Обновлены тесты `test_polyline_logic.py`, `test_batch_ui.py`, `test_exporter.py`, `test_block_export_logic.py`. Все 65 тестов проходят успешно.
 
 ---
 

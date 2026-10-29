@@ -55,7 +55,12 @@ class TestBlockExportLogic(unittest.TestCase):
                 "min_x": 1000.0,
                 "min_y": 2000.0,
                 "max_x": 43000.0,
-                "max_y": 31700.0
+                "max_y": 31700.0,
+                "attrs": {
+                    "SHIFR": "09-23-КЖ",
+                    "OBJECT": "Жилой комплекс",
+                    "BUILDING": "Поз. 1"
+                }
             },
             {
                 "handle": "100B",
@@ -80,6 +85,9 @@ class TestBlockExportLogic(unittest.TestCase):
         self.assertEqual(f1.sheet_name, "Схема расположения колонн")
         self.assertEqual(f1.paper_format, "A3")
         self.assertEqual(f1.source_type, "Block")
+        self.assertEqual(f1.doc_code, "09-23-КЖ")
+        self.assertEqual(f1.object_name, "Жилой комплекс")
+        self.assertEqual(f1.building_name, "Поз. 1")
 
         # Второй лист: А4 (210 x 297 при масштабе 1:1)
         f2 = frames[1]

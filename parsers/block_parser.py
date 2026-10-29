@@ -9,18 +9,39 @@ from core.resource_utils import get_resource_path
 
 
 class BlockParser(BaseParser):
-    def __init__(self, block_names: List[str] = None, sheet_attr_tags: List[str] = None, title_attr_tags: List[str] = None):
+    def __init__(
+        self,
+        block_names: List[str] = None,
+        sheet_attr_tags: List[str] = None,
+        title_attr_tags: List[str] = None,
+        shifr_attr_tags: List[str] = None,
+        object_attr_tags: List[str] = None,
+        building_attr_tags: List[str] = None,
+    ):
         """
         :param block_names: Список имен блоков или масок (например, ["SHT_*", "Формат*"])
         :param sheet_attr_tags: Список тегов атрибутов, в которых хранится номер листа
         :param title_attr_tags: Список тегов атрибутов названия листа
+        :param shifr_attr_tags: Список тегов атрибутов шифра / обозначения (графа 1)
+        :param object_attr_tags: Список тегов атрибутов наименования объекта (графа 2)
+        :param building_attr_tags: Список тегов атрибутов наименования здания (графа 3)
         """
         self.block_names = [name.lower() for name in (block_names or ["SHT_*", "Формат*"])]
         self.sheet_attr_tags = [tag.upper() for tag in (sheet_attr_tags or ["SHEET", "ЛИСТ", "НОМЕР", "НОМЕР_ЛИСТА", "SH_NUM"])]
         self.title_attr_tags = [tag.upper() for tag in (title_attr_tags or ["TITLE", "НАИМЕНОВАНИЕ", "НАЗВАНИЕ", "НАИМЕНОВАНИЕ_ЛИСТА", "SHEET_NAME"])]
+        self.shifr_attr_tags = [tag.upper() for tag in (shifr_attr_tags or ["SHIFR", "ШИФР", "DOC_CODE", "CODE", "DESIGNATION", "ОБОЗНАЧЕНИЕ", "ОБОЗНАЧЕНИЕ_ДОКУМЕНТА"])]
+        self.object_attr_tags = [tag.upper() for tag in (object_attr_tags or ["OBJECT", "ОБЪЕКТ", "OBJECT_NAME", "НАИМЕНОВАНИЕ_ОБЪЕКТА", "COMPLEXNAME", "ПРЕДПРИЯТИЕ"])]
+        self.building_attr_tags = [tag.upper() for tag in (building_attr_tags or ["BUILDING", "ЗДАНИЕ", "BUILDING_NAME", "НАИМЕНОВАНИЕ_ЗДАНИЯ", "СООРУЖЕНИЕ", "ПОЗИЦИЯ", "DRAWINGNAME1"])]
 
         # Путь к LISP-экстрактору рамок-блоков
         self.lisp_path = get_resource_path("core/lisp/block_export.lsp")
+
+    @staticmethod
+    def _get_attr_value(attrs: dict, tags: List[str]) -> str:
+        for t in tags:
+            if t in attrs and attrs[t]:
+                return attrs[t]
+        return ""
 
     def _convert_items_to_frames(self, items: list) -> List[Frame]:
         frames = []
@@ -40,6 +61,11 @@ class BlockParser(BaseParser):
 
             fmt = detect_paper_format(w, h, b_name, scale=sc)
 
+            attrs = {k.upper(): str(v).strip() for k, v in item.get("attrs", {}).items()}
+            doc_code = self._get_attr_value(attrs, self.shifr_attr_tags)
+            object_name = self._get_attr_value(attrs, self.object_attr_tags)
+            building_name = self._get_attr_value(attrs, self.building_attr_tags)
+
             frame = Frame(
                 object_id=0,
                 sheet_number=num,
@@ -48,7 +74,10 @@ class BlockParser(BaseParser):
                 max_point=(max_x, max_y, 0.0),
                 source_type="Block",
                 paper_format=fmt,
-                handle=hdl
+                handle=hdl,
+                doc_code=doc_code,
+                object_name=object_name,
+                building_name=building_name
             )
             frames.append(frame)
         return frames
@@ -105,15 +134,16 @@ class BlockParser(BaseParser):
 
                     if matched:
                         min_pt, max_pt = obj.GetBoundingBox()
-                        sheet_number = "Unknown"
-                        sheet_name = "Unknown"
+                        attrs = {}
                         if obj.HasAttributes:
                             for attr in obj.GetAttributes():
-                                tag = attr.TagString.upper()
-                                if tag in self.sheet_attr_tags:
-                                    sheet_number = attr.TextString
-                                elif tag in self.title_attr_tags or tag == "TITLE":
-                                    sheet_name = attr.TextString
+                                attrs[attr.TagString.upper()] = attr.TextString.strip()
+
+                        sheet_number = self._get_attr_value(attrs, self.sheet_attr_tags) or "Unknown"
+                        sheet_name = self._get_attr_value(attrs, self.title_attr_tags) or "Unknown"
+                        doc_code = self._get_attr_value(attrs, self.shifr_attr_tags)
+                        object_name = self._get_attr_value(attrs, self.object_attr_tags)
+                        building_name = self._get_attr_value(attrs, self.building_attr_tags)
 
                         w = max_pt[0] - min_pt[0]
                         h = max_pt[1] - min_pt[1]
@@ -126,7 +156,10 @@ class BlockParser(BaseParser):
                             max_point=max_pt,
                             source_type="Block",
                             paper_format=detect_paper_format(w, h, block_name, scale=blk_scale),
-                            handle=getattr(obj, 'Handle', '')
+                            handle=getattr(obj, 'Handle', ''),
+                            doc_code=doc_code,
+                            object_name=object_name,
+                            building_name=building_name
                         )
                         frames.append(frame)
             except Exception:

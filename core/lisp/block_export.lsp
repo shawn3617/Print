@@ -35,7 +35,7 @@
 (defun sht-export-blocks (filepath patterns-str sheet-tags-str title-tags-str / 
                           ss i en ed obj bname eff-name hdl sc
                           sh-num sh-name att-list tag-str val-str
-                          mn mx min-pt max-pt r fp first)
+                          mn mx min-pt max-pt r fp first first-att)
   (setq patterns-str (strcase patterns-str))
   (setq sheet-tags-str (strcase sheet-tags-str))
   (setq title-tags-str (strcase title-tags-str))
@@ -111,7 +111,17 @@
                     (write-line (strcat "    \"min_x\": " (sht-blk-num-to-str (car min-pt)) ",") fp)
                     (write-line (strcat "    \"min_y\": " (sht-blk-num-to-str (cadr min-pt)) ",") fp)
                     (write-line (strcat "    \"max_x\": " (sht-blk-num-to-str (car max-pt)) ",") fp)
-                    (write-line (strcat "    \"max_y\": " (sht-blk-num-to-str (cadr max-pt))) fp)
+                    (write-line (strcat "    \"max_y\": " (sht-blk-num-to-str (cadr max-pt)) ",") fp)
+                    (write-line "    \"attrs\": {" fp)
+                    (if (and att-list (not (vl-catch-all-error-p att-list)))
+                      (progn
+                        (setq first-att T)
+                        (foreach att att-list
+                          (if (not first-att) (write-line "      ," fp))
+                          (setq first-att nil)
+                          (write-line (strcat "      \"" (sht-blk-escape-json (vla-get-TagString att)) "\": \""
+                                              (sht-blk-escape-json (vla-get-TextString att)) "\"") fp))))
+                    (write-line "    }" fp)
                     (write-line "  }" fp)
                   )
                 )
