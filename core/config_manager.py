@@ -10,6 +10,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "open_after_print": True,
     "sync_autocad": True,
     "source_mode": "Модель (Model Space)",
+    "table_column_widths": [65, 60, 180, 260, 220, 200, 75, 140, 90],
 }
 
 

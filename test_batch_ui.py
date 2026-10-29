@@ -123,5 +123,24 @@ class TestBatchUI(unittest.TestCase):
         self.assertEqual(self.win.combo_papers.currentText(), "ISO A1 (594.00 x 841.00 мм)")
 
 
+    def test_table_column_widths_and_horizontal_scroll(self):
+        from PySide6.QtWidgets import QHeaderView
+        from PySide6.QtCore import Qt
+
+        header = self.win.table.horizontalHeader()
+        # Все колонки должны быть интерактивными (можно менять ширину)
+        for i in range(self.win.table.columnCount()):
+            self.assertEqual(header.sectionResizeMode(i), QHeaderView.ResizeMode.Interactive)
+
+        # Проверка включения горизонтальной прокрутки
+        self.assertEqual(self.win.table.horizontalScrollBarPolicy(), Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        # Проверка сохранения ширины колонок при изменении
+        self.win._is_loading_config = False
+        header.resizeSection(3, 350)
+        self.mock_config.set.assert_called_with("table_column_widths", [header.sectionSize(i) for i in range(self.win.table.columnCount())])
+        self.mock_config.save.assert_called()
+
+
 if __name__ == "__main__":
     unittest.main()

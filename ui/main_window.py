@@ -226,6 +226,11 @@ class PrintManagerUI(QMainWindow):
             QScrollBar:vertical { background-color: #181825; width: 14px; margin: 0px; }
             QScrollBar::handle:vertical { background-color: #45475a; min-height: 20px; border-radius: 7px; }
             QScrollBar::handle:vertical:hover { background-color: #585b70; }
+            QScrollBar:horizontal { background-color: #181825; height: 14px; margin: 0px; }
+            QScrollBar::handle:horizontal { background-color: #45475a; min-width: 20px; border-radius: 7px; }
+            QScrollBar::handle:horizontal:hover { background-color: #585b70; }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal, QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { width: 0px; height: 0px; }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal, QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
             QDialog { background-color: #1e1e2e; }
             QProgressBar { background-color: #313244; color: #ffffff; border: 1px solid #45475a; border-radius: 6px; text-align: center; font-size: 13px; font-weight: bold; min-height: 24px; }
             QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #89b4fa, stop:1 #a6e3a1); border-radius: 5px; }
@@ -340,19 +345,22 @@ class PrintManagerUI(QMainWindow):
             "Чертеж",
             "Источник"
         ])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
-        self.table.horizontalHeader().resizeSection(2, 160)
-        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
-        self.table.horizontalHeader().resizeSection(4, 200)
-        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
-        self.table.horizontalHeader().resizeSection(5, 170)
-        self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Interactive)
-        self.table.horizontalHeader().resizeSection(7, 130)
-        self.table.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+
+        default_widths = [65, 60, 180, 260, 220, 200, 75, 140, 90]
+        saved_widths = self.config_manager.get("table_column_widths", default_widths)
+        if not isinstance(saved_widths, list) or len(saved_widths) != 9:
+            saved_widths = default_widths
+
+        for col_idx, width in enumerate(saved_widths):
+            header.resizeSection(col_idx, width)
+
+        header.sectionResized.connect(self.on_column_resized)
+
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(True)
         self.table.setToolTip("Листы можно перетаскивать мышкой или перемещать кнопками «Вверх» / «Вниз» (Ctrl+↑ / Ctrl+↓).\nМожно перетаскивать файлы DWG из проводника прямо в окно программы.")
@@ -1121,6 +1129,17 @@ class PrintManagerUI(QMainWindow):
         row = self.table.currentRow()
         if 0 <= row < self.table.rowCount() - 1:
             self.move_row(row, row + 1)
+
+    def on_column_resized(self, logical_index, old_size, new_size):
+        if getattr(self, "_is_loading_config", False):
+            return
+        try:
+            header = self.table.horizontalHeader()
+            widths = [header.sectionSize(i) for i in range(self.table.columnCount())]
+            self.config_manager.set("table_column_widths", widths)
+            self.config_manager.save()
+        except Exception:
+            pass
 
     def on_row_drag_moved(self, from_row: int, to_row: int):
         if self.is_filter_active():
