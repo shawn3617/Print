@@ -155,6 +155,36 @@ class TestBatchUI(unittest.TestCase):
         self.assertEqual(self.win.table_tools_row1.count(), 5)
         self.assertEqual(self.win.table_tools_row2.count(), 5)
 
+    def test_theme_switching_and_persistence(self):
+        # Проверяем наличие всех тем в combo_theme
+        theme_keys = [self.win.combo_theme.itemData(i) for i in range(self.win.combo_theme.count())]
+        self.assertIn("dark_catppuccin", theme_keys)
+        self.assertIn("autocad_dark", theme_keys)
+        self.assertIn("light", theme_keys)
+
+        # Переключаем тему на autocad_dark
+        self.win._is_loading_config = False
+        idx_acad = self.win.combo_theme.findData("autocad_dark")
+        self.win.combo_theme.setCurrentIndex(idx_acad)
+        self.assertEqual(self.win.current_theme, "autocad_dark")
+        self.assertIn("#212121", self.win.styleSheet())
+        self.mock_config.save.assert_called()
+
+        # Переключаем тему на light
+        idx_light = self.win.combo_theme.findData("light")
+        self.win.combo_theme.setCurrentIndex(idx_light)
+        self.assertEqual(self.win.current_theme, "light")
+        self.assertIn("#f0f2f5", self.win.styleSheet())
+        self.mock_config.save.assert_called()
+
+    def test_theme_restore_from_config(self):
+        mock_cfg = MagicMock()
+        mock_cfg.load.return_value = {"theme": "autocad_dark"}
+        mock_cfg.get.side_effect = lambda k, d=None: "autocad_dark" if k == "theme" else d
+        win2 = PrintManagerUI(config_manager=mock_cfg)
+        self.assertEqual(win2.current_theme, "autocad_dark")
+        self.assertEqual(win2.combo_theme.currentData(), "autocad_dark")
+
 
 if __name__ == "__main__":
     unittest.main()

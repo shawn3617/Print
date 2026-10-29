@@ -22,6 +22,7 @@ from core.printer import BatchPrinter, PrintCancelledError
 from core.config_manager import ConfigManager
 from core.models import natural_sheet_sort_key, frame_natural_sort_key
 from core.exporter import SheetExporter
+from ui.themes import THEMES, build_theme_qss, get_theme_status_colors
 
 
 class ReorderableTableWidget(QTableWidget):
@@ -117,11 +118,12 @@ class PrintProgressDialog(QDialog):
         layout.setSpacing(12)
         
         self.lbl_title = QLabel("Идет печать чертежей...")
-        self.lbl_title.setStyleSheet("font-size: 15px; font-weight: bold; color: #89b4fa;")
+        self.lbl_title.setProperty("cssClass", "header_accent")
+        self.lbl_title.setStyleSheet("font-size: 15px; font-weight: bold;")
         layout.addWidget(self.lbl_title)
         
         self.lbl_status = QLabel("Подготовка к печати...")
-        self.lbl_status.setStyleSheet("font-size: 13px; color: #cdd6f4;")
+        self.lbl_status.setStyleSheet("font-size: 13px;")
         self.lbl_status.setWordWrap(True)
         layout.addWidget(self.lbl_status)
         
@@ -194,74 +196,19 @@ class PrintManagerUI(QMainWindow):
         self.paper_dict = {} # Словарь {Локальное_Имя: Системное_Имя}
         self._is_updating_table = False
         
-        self.setup_theme()
+        saved_theme = self.config_manager.get("theme", "dark_catppuccin")
+        self.current_theme = saved_theme if saved_theme in THEMES else "dark_catppuccin"
+        self.setup_theme(self.current_theme)
         self.init_ui()
         self.apply_initial_config()
         self.refresh_document_status()
         self._is_loading_config = False
 
-    def setup_theme(self):
-        # Премиальная темная тема
-        self.setStyleSheet("""
-            QMainWindow { background-color: #1e1e2e; }
-            QLabel { color: #cdd6f4; font-size: 14px; font-family: 'Segoe UI', Arial; }
-            QGroupBox { color: #cdd6f4; font-size: 14px; font-weight: bold; border: 1px solid #45475a; border-radius: 8px; margin-top: 15px; }
-            QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; }
-            QComboBox { background-color: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 5px; font-size: 14px; }
-            QComboBox:hover { border: 1px solid #74c7ec; }
-            QComboBox:focus { border: 1px solid #89b4fa; }
-            QComboBox::drop-down { border: none; width: 20px; }
-            QComboBox QAbstractItemView {
-                background-color: #1e1e2e;
-                color: #cdd6f4;
-                selection-background-color: #45475a;
-                selection-color: #ffffff;
-                border: 1px solid #45475a;
-                border-radius: 6px;
-                padding: 4px;
-                outline: none;
-            }
-            QComboBox QAbstractItemView::item {
-                color: #cdd6f4;
-                min-height: 26px;
-                padding: 4px 8px;
-                border-radius: 4px;
-            }
-            QComboBox QAbstractItemView::item:hover {
-                background-color: #313244;
-                color: #ffffff;
-            }
-            QComboBox QAbstractItemView::item:selected {
-                background-color: #45475a;
-                color: #ffffff;
-            }
-            QLineEdit { background-color: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
-            QLineEdit:focus { border: 1px solid #89b4fa; }
-            QCheckBox { color: #cdd6f4; font-size: 13px; spacing: 6px; }
-            QCheckBox::indicator { width: 16px; height: 16px; }
-            QPushButton { background-color: #89b4fa; color: #11111b; border: none; border-radius: 6px; padding: 10px 20px; font-size: 14px; font-weight: bold; }
-            QPushButton:hover { background-color: #74c7ec; }
-            QPushButton:pressed { background-color: #89dceb; }
-            QPushButton#btn_print { background-color: #a6e3a1; font-size: 16px; padding: 15px; }
-            QPushButton#btn_print:hover { background-color: #94e2d5; }
-            QTableWidget { background-color: #181825; color: #cdd6f4; gridline-color: #313244; border: 1px solid #45475a; border-radius: 8px; }
-            QTableWidget::item:selected { background-color: #45475a; color: #ffffff; }
-            QHeaderView::section { background-color: #313244; color: #cdd6f4; padding: 5px; border: 1px solid #45475a; font-weight: bold; }
-            QPushButton[cssClass="btn_tool"] { background-color: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 6px; padding: 6px 14px; font-size: 13px; font-weight: normal; }
-            QPushButton[cssClass="btn_tool"]:hover { background-color: #45475a; color: #ffffff; }
-            QPushButton[cssClass="btn_tool"]:pressed { background-color: #585b70; }
-            QScrollBar:vertical { background-color: #181825; width: 14px; margin: 0px; }
-            QScrollBar::handle:vertical { background-color: #45475a; min-height: 20px; border-radius: 7px; }
-            QScrollBar::handle:vertical:hover { background-color: #585b70; }
-            QScrollBar:horizontal { background-color: #181825; height: 14px; margin: 0px; }
-            QScrollBar::handle:horizontal { background-color: #45475a; min-width: 20px; border-radius: 7px; }
-            QScrollBar::handle:horizontal:hover { background-color: #585b70; }
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal, QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { width: 0px; height: 0px; }
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal, QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
-            QDialog { background-color: #1e1e2e; }
-            QProgressBar { background-color: #313244; color: #ffffff; border: 1px solid #45475a; border-radius: 6px; text-align: center; font-size: 13px; font-weight: bold; min-height: 24px; }
-            QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #89b4fa, stop:1 #a6e3a1); border-radius: 5px; }
-        """)
+    def setup_theme(self, theme_id: str = "dark_catppuccin"):
+        if theme_id not in THEMES:
+            theme_id = "dark_catppuccin"
+        self.current_theme = theme_id
+        self.setStyleSheet(build_theme_qss(theme_id))
 
     def init_ui(self):
         central_widget = QWidget()
@@ -304,7 +251,7 @@ class PrintManagerUI(QMainWindow):
         batch_bar.setSpacing(8)
 
         lbl_batch = QLabel("Пакет чертежей:")
-        lbl_batch.setStyleSheet("font-weight: bold; color: #89b4fa;")
+        lbl_batch.setProperty("cssClass", "header_accent")
         batch_bar.addWidget(lbl_batch)
 
         btn_add_dwg = QPushButton("+ DWG...")
@@ -339,7 +286,7 @@ class PrintManagerUI(QMainWindow):
         filter_bar.setSpacing(8)
 
         lbl_filter = QLabel("Поиск:")
-        lbl_filter.setStyleSheet("font-weight: bold; color: #89b4fa;")
+        lbl_filter.setProperty("cssClass", "header_accent")
         filter_bar.addWidget(lbl_filter)
 
         self.txt_search = QLineEdit()
@@ -350,7 +297,7 @@ class PrintManagerUI(QMainWindow):
         filter_bar.addWidget(self.txt_search, stretch=3)
 
         lbl_fmt = QLabel("Формат:")
-        lbl_fmt.setStyleSheet("font-weight: bold; color: #89b4fa;")
+        lbl_fmt.setProperty("cssClass", "header_accent")
         filter_bar.addWidget(lbl_fmt)
 
         self.combo_filter_format = QComboBox()
@@ -477,6 +424,21 @@ class PrintManagerUI(QMainWindow):
         right_widget.setMaximumWidth(360)
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Выбор темы оформления
+        theme_layout = QHBoxLayout()
+        theme_layout.setSpacing(10)
+        lbl_theme = QLabel("Оформление:")
+        lbl_theme.setProperty("cssClass", "header_accent")
+        self.combo_theme = QComboBox()
+        self.combo_theme.setView(QListView())
+        for tid, tmeta in THEMES.items():
+            self.combo_theme.addItem(tmeta["name"], tid)
+        self.combo_theme.currentIndexChanged.connect(self.on_theme_changed)
+        theme_layout.addWidget(lbl_theme)
+        theme_layout.addWidget(self.combo_theme, stretch=1)
+        right_layout.addLayout(theme_layout)
+
         group_printer = QGroupBox("Настройки печати")
         form_layout = QFormLayout(group_printer)
         form_layout.setSpacing(14)
@@ -529,6 +491,15 @@ class PrintManagerUI(QMainWindow):
         self.chk_sync_acad.setChecked(bool(cfg.get("sync_autocad", True)))
         self.chk_open_after.setChecked(bool(cfg.get("open_after_print", True)))
         
+        saved_theme = cfg.get("theme", "dark_catppuccin")
+        if isinstance(saved_theme, str) and hasattr(self, "combo_theme"):
+            idx_theme = self.combo_theme.findData(saved_theme)
+            if idx_theme >= 0:
+                self.combo_theme.blockSignals(True)
+                self.combo_theme.setCurrentIndex(idx_theme)
+                self.combo_theme.blockSignals(False)
+            self.apply_theme(saved_theme)
+
         saved_mode = cfg.get("merge_mode", "В один файл (PDF)")
         if isinstance(saved_mode, str):
             idx_mode = self.combo_mode.findText(saved_mode)
@@ -540,6 +511,29 @@ class PrintManagerUI(QMainWindow):
             idx_source = self.combo_source.findText(saved_source)
             if idx_source >= 0:
                 self.combo_source.setCurrentIndex(idx_source)
+
+    def on_theme_changed(self, index: int):
+        if getattr(self, "_is_loading_config", False):
+            return
+        theme_id = self.combo_theme.currentData()
+        if theme_id:
+            self.apply_theme(theme_id)
+            self.save_settings()
+
+    def apply_theme(self, theme_id: str):
+        if theme_id not in THEMES:
+            theme_id = "dark_catppuccin"
+        self.current_theme = theme_id
+        self.setStyleSheet(build_theme_qss(theme_id))
+        
+        # Обновляем цвет статуса документа в соответствии с новой темой
+        if hasattr(self, "lbl_document"):
+            doc_name = self.lbl_document.text()
+            ok_col, err_col = get_theme_status_colors(theme_id)
+            if "не подключено" in doc_name.lower() or "ошибка" in doc_name.lower():
+                self.lbl_document.setStyleSheet(f"color: {err_col}; font-weight: bold;")
+            else:
+                self.lbl_document.setStyleSheet(f"color: {ok_col}; font-weight: bold;")
 
     def on_source_mode_changed(self, text: str):
         if "Layout" in text or "Листы" in text:
@@ -562,6 +556,7 @@ class PrintManagerUI(QMainWindow):
         paper_text = self.combo_papers.currentText()
         mode_text = self.combo_mode.currentText()
         source_text = self.combo_source.currentText()
+        theme_val = self.combo_theme.currentData() if hasattr(self, "combo_theme") else getattr(self, "current_theme", "dark_catppuccin")
         
         current_cfg = self.config_manager.load()
         if not isinstance(current_cfg, dict):
@@ -574,6 +569,7 @@ class PrintManagerUI(QMainWindow):
             "open_after_print": self.chk_open_after.isChecked(),
             "sync_autocad": self.chk_sync_acad.isChecked(),
             "source_mode": source_text if source_text else current_cfg.get("source_mode", "Модель (Model Space)"),
+            "theme": theme_val if theme_val else current_cfg.get("theme", "dark_catppuccin"),
         }
         self.config_manager.save(settings)
         
@@ -758,11 +754,12 @@ class PrintManagerUI(QMainWindow):
             progress_dlg.close()
 
     def refresh_document_status(self):
+        ok_col, err_col = get_theme_status_colors(getattr(self, "current_theme", "dark_catppuccin"))
         try:
             self.connector.connect()
             doc_name = self.connector.get_active_document_name()
             self.lbl_document.setText(doc_name)
-            self.lbl_document.setStyleSheet("color: #a6e3a1; font-weight: bold;")
+            self.lbl_document.setStyleSheet(f"color: {ok_col}; font-weight: bold;")
             
             # Инициализируем принтер с коннектором для поддержки переключения чертежей
             self.printer = BatchPrinter(self.connector.doc, connector=self.connector)
@@ -771,7 +768,7 @@ class PrintManagerUI(QMainWindow):
             
         except Exception as e:
             self.lbl_document.setText("Ошибка подключения")
-            self.lbl_document.setStyleSheet("color: #f38ba8; font-weight: bold;")
+            self.lbl_document.setStyleSheet(f"color: {err_col}; font-weight: bold;")
 
             
     def load_printer_settings(self):
