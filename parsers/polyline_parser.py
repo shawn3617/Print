@@ -16,11 +16,25 @@ NICE_SCALES = [1, 2, 2.5, 4, 5, 10, 15, 20, 25, 40, 50, 75, 100, 125, 150, 200, 
 # Поля по ГОСТ 21.101: слева 20 мм, сверху/справа/снизу 5 мм
 MARGIN_LEFT, MARGIN_OTHER = 20.0, 5.0
 
-# Графы основной надписи формы 3 (185×55) — в мм от правого нижнего угла ВНУТРЕННЕЙ рамки:
-# (dx_min, dx_max, dy_min, dy_max)
-CELL_SHEET_NUM = (-35.0, -20.0, 15.0, 25.0)    # «Лист» — значение под заголовком
-CELL_SHEET_NAME = (-120.0, -50.0, 0.0, 15.0)   # графа 4 — наименование листа (нижняя строка)
-STAMP_ZONE = (-185.0, 0.0, 0.0, 60.0)          # вся основная надпись
+# Графы формы 3 (185×55, основной комплект рабочих чертежей) — в мм от правого нижнего угла ВНУТРЕННЕЙ рамки:
+CELL_SHEET_NUM_F3 = (-35.0, -20.0, 15.0, 25.0)    # графа 7 «Лист»
+CELL_SHEET_NAME_F3 = (-120.0, -50.0, 0.0, 16.0)   # графа 4 «Наименование листа» (нижняя строка)
+
+# Графы формы 4 (185×55, чертежи строительных изделий):
+CELL_SHEET_NUM_F4 = (-40.0, -22.0, 14.0, 22.0)    # «Лист» — значение справа от надписи в строке Y≈17
+CELL_SHEET_NAME_F4 = (-120.0, -50.0, 18.0, 36.0)  # графа 4 «Наименование изделия» (над строкой листа)
+
+# Стандартные служебные заголовки граф штампа (не могут быть наименованием листа)
+STAMP_HEADER_LABELS = {
+    "изм.", "изм", "кол. уч.", "кол.уч.", "кол. уч", "кол", "лист", "листов",
+    "№ док.", "№док.", "№ док", "подп.", "подп", "подпись", "дата",
+    "стадия", "масса", "масштаб", "формат"
+}
+
+# Графы формы 6 (185×15, последующие листы):
+CELL_SHEET_NUM_F6 = (-35.0, -20.0, 0.0, 15.0)     # графа 7 «Лист»
+
+STAMP_ZONE = (-185.0, 0.0, 0.0, 60.0)             # вся основная надпись
 
 
 def _clean_text(s: str) -> str:
@@ -186,6 +200,30 @@ def analyze(polys: List[dict], texts: List[Tuple[float, float, str]]) -> List[di
     return frames
 
 
+def _detect_stamp_form(local: List[Tuple[float, float, str]]) -> int:
+    """
+    Определяет форму штампа по ГОСТ 21.101:
+    - форма 4: чертежи строительных изделий (наличие «Масса»/«Масштаб» в правой колонке или «Лист ... Листов» на Y=14..22)
+    - форма 6: последующие листы (штамп высотой 15 мм, нет надписей выше Y=18)
+    - форма 3: основной комплект рабочих чертежей (по умолчанию)
+    """
+    # Если выше 18 мм вообще нет текстов — это форма 6 (малый штамп 15 мм)
+    if not any(t[1] > 18.0 for t in local):
+        return 6
+
+    # Форма 4: есть графа «Масса» или «Масштаб» справа (X > -45)
+    if any(t[2].strip().lower() in ("масса", "масштаб") and t[0] > -45.0 for t in local):
+        return 4
+
+    # Форма 4: «Лист» и «Листов» в одной строке на высоте Y=14..22
+    for t in local:
+        if t[2].strip().lower() == "лист" and t[0] > -55.0 and 14.0 <= t[1] <= 22.0:
+            if any(o[2].strip().lower() == "листов" and abs(o[1] - t[1]) < 4.0 and o[0] > t[0] for o in local):
+                return 4
+
+    return 3
+
+
 def _read_stamp(anchor, s, texts):
     """Номер и наименование листа по графам основной надписи."""
     ax, ay = anchor
@@ -198,14 +236,35 @@ def _read_stamp(anchor, s, texts):
     def in_cell(cell):
         return [t for t in local if cell[0] <= t[0] <= cell[1] and cell[2] <= t[1] <= cell[3]]
 
-    # номер листа: графа «Лист» формы 3, иначе — рядом с надписью «Лист»
-    cell = [t for t in in_cell(CELL_SHEET_NUM) if t[2].strip().lower() not in ("лист", "листов")]
+    form = _detect_stamp_form(local)
+    if form == 4:
+        cell_num = CELL_SHEET_NUM_F4
+        cell_name = CELL_SHEET_NAME_F4
+    elif form == 6:
+        cell_num = CELL_SHEET_NUM_F6
+        cell_name = None
+    else:
+        cell_num = CELL_SHEET_NUM_F3
+        cell_name = CELL_SHEET_NAME_F3
+
+    # номер листа: графа «Лист» соответствующей формы, иначе — рядом с надписью «Лист»
+    cell = [t for t in in_cell(cell_num) if t[2].strip().lower() not in ("лист", "листов")]
     number = max(cell, key=lambda t: t[1])[2] if cell else _number_near_label(local)
 
-    # наименование листа: графа 4, строки сверху вниз
-    name = " ".join(t[2].strip() for t in sorted(in_cell(CELL_SHEET_NAME), key=lambda t: -t[1]))
+    # наименование листа: графа 4, строки сверху вниз (исключая служебные заголовки граф)
+    if cell_name:
+        name_cells = [t for t in in_cell(cell_name) if t[2].strip().lower() not in STAMP_HEADER_LABELS]
+        name = " ".join(t[2].strip() for t in sorted(name_cells, key=lambda t: -t[1]))
+    else:
+        name = ""
 
-    return (number or "Unknown"), (name or "Unknown"), [t[2] for t in local]
+    # Для формы 6 наименование листа по ГОСТ отсутствует — оставляем пустым, не 'Unknown'
+    if form == 6:
+        final_name = name
+    else:
+        final_name = name or "Unknown"
+
+    return (number or "Unknown"), final_name, [t[2] for t in local]
 
 
 def _number_near_label(local):
