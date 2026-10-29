@@ -183,6 +183,7 @@ class PrintManagerUI(QMainWindow):
         super().__init__()
         self.setWindowTitle("Smart Batch Print - AutoCAD")
         self.resize(1100, 650)
+        self.setMinimumSize(780, 480)
         self.setAcceptDrops(True)
         self.config_manager = config_manager or ConfigManager()
         self._is_loading_config = True
@@ -246,19 +247,23 @@ class PrintManagerUI(QMainWindow):
         # ЛЕВАЯ ЧАСТЬ
         left_layout = QVBoxLayout()
         top_bar = QHBoxLayout()
-        top_bar.addWidget(QLabel("Активный чертеж:"))
+        top_bar.addWidget(QLabel("Чертеж:"))
         self.lbl_document = QLabel("Не подключено")
         self.lbl_document.setStyleSheet("color: #a6e3a1; font-weight: bold;")
+        self.lbl_document.setMinimumWidth(30)
         self.lbl_document.setSizePolicy(self.lbl_document.sizePolicy().Policy.Expanding, self.lbl_document.sizePolicy().Policy.Fixed)
         top_bar.addWidget(self.lbl_document)
         btn_refresh = QPushButton("Обновить связь")
         btn_refresh.setProperty("cssClass", "btn_tool")
+        btn_refresh.setToolTip("Обновить связь с активным чертежом AutoCAD")
         btn_refresh.clicked.connect(self.refresh_document_status)
         top_bar.addWidget(btn_refresh)
         
         top_bar.addWidget(QLabel("Источник:"))
         self.combo_source = QComboBox()
         self.combo_source.addItems(["Модель (Model Space)", "Листы (Layouts)"])
+        self.combo_source.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_source.setMinimumContentsLength(6)
         self.combo_source.currentTextChanged.connect(self.on_source_mode_changed)
         top_bar.addWidget(self.combo_source)
         
@@ -275,25 +280,25 @@ class PrintManagerUI(QMainWindow):
         lbl_batch.setStyleSheet("font-weight: bold; color: #89b4fa;")
         batch_bar.addWidget(lbl_batch)
 
-        btn_add_dwg = QPushButton("+ Добавить DWG...")
+        btn_add_dwg = QPushButton("+ DWG...")
         btn_add_dwg.setProperty("cssClass", "btn_tool")
         btn_add_dwg.setToolTip("Выбрать один или несколько DWG-файлов для сканирования и печати")
         btn_add_dwg.clicked.connect(self.add_dwg_files_dialog)
         batch_bar.addWidget(btn_add_dwg)
 
-        btn_add_folder = QPushButton("+ Папка с DWG...")
+        btn_add_folder = QPushButton("+ Папка...")
         btn_add_folder.setProperty("cssClass", "btn_tool")
         btn_add_folder.setToolTip("Выбрать папку для добавления всех чертежей .dwg")
         btn_add_folder.clicked.connect(self.add_dwg_folder_dialog)
         batch_bar.addWidget(btn_add_folder)
 
-        btn_clear = QPushButton("Очистить список")
+        btn_clear = QPushButton("Очистить")
         btn_clear.setProperty("cssClass", "btn_tool")
         btn_clear.setToolTip("Очистить таблицу найденных листов")
         btn_clear.clicked.connect(self.clear_frames)
         batch_bar.addWidget(btn_clear)
 
-        btn_close_opened = QPushButton("Закрыть чертежи программы")
+        btn_close_opened = QPushButton("Закрыть чертежи")
         btn_close_opened.setProperty("cssClass", "btn_tool")
         btn_close_opened.setToolTip("Закрыть в AutoCAD все чертежи, которые были открыты программой (для просмотра или печати)")
         btn_close_opened.clicked.connect(self.close_opened_documents_dialog)
@@ -312,6 +317,7 @@ class PrintManagerUI(QMainWindow):
 
         self.txt_search = QLineEdit()
         self.txt_search.setPlaceholderText("Номер, название или чертеж...")
+        self.txt_search.setMinimumWidth(60)
         self.txt_search.setClearButtonEnabled(True)
         self.txt_search.textChanged.connect(self.apply_filter)
         filter_bar.addWidget(self.txt_search, stretch=3)
@@ -322,6 +328,8 @@ class PrintManagerUI(QMainWindow):
 
         self.combo_filter_format = QComboBox()
         self.combo_filter_format.addItem("Все форматы")
+        self.combo_filter_format.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_filter_format.setMinimumContentsLength(8)
         self.combo_filter_format.currentIndexChanged.connect(self.apply_filter)
         filter_bar.addWidget(self.combo_filter_format, stretch=1)
 
@@ -371,66 +379,76 @@ class PrintManagerUI(QMainWindow):
         left_layout.addWidget(self.table)
 
 
-        # Панель управления порядком и выбором листов
-        table_tools = QHBoxLayout()
-        table_tools.setSpacing(8)
+        # Панель управления порядком и выбором листов (2 строки для компактности)
+        table_tools_row1 = QHBoxLayout()
+        table_tools_row1.setSpacing(8)
 
         btn_select_all = QPushButton("Выбрать все")
         btn_select_all.setProperty("cssClass", "btn_tool")
         btn_select_all.clicked.connect(lambda: self.select_all_rows(True))
-        table_tools.addWidget(btn_select_all)
+        table_tools_row1.addWidget(btn_select_all)
 
         btn_deselect_all = QPushButton("Снять все")
         btn_deselect_all.setProperty("cssClass", "btn_tool")
         btn_deselect_all.clicked.connect(lambda: self.select_all_rows(False))
-        table_tools.addWidget(btn_deselect_all)
+        table_tools_row1.addWidget(btn_deselect_all)
 
         btn_sort_num = QPushButton("По номерам")
         btn_sort_num.setProperty("cssClass", "btn_tool")
         btn_sort_num.setToolTip("Сбросить ручной порядок и отсортировать по возрастанию номеров листов")
         btn_sort_num.clicked.connect(self.sort_by_sheet_number)
-        table_tools.addWidget(btn_sort_num)
+        table_tools_row1.addWidget(btn_sort_num)
 
         btn_export = QPushButton("В Excel / CSV...")
         btn_export.setProperty("cssClass", "btn_tool")
         btn_export.setToolTip("Экспортировать ведомость листов таблицы в Excel (.xlsx) или CSV")
         btn_export.clicked.connect(self.export_sheet_list_dialog)
-        table_tools.addWidget(btn_export)
+        table_tools_row1.addWidget(btn_export)
+
+        table_tools_row1.addStretch()
+        left_layout.addLayout(table_tools_row1)
+
+        table_tools_row2 = QHBoxLayout()
+        table_tools_row2.setSpacing(8)
 
         self.btn_move_up = QPushButton("▲ Вверх (Ctrl+↑)")
         self.btn_move_up.setProperty("cssClass", "btn_tool")
         self.btn_move_up.setToolTip("Поднять выбранный лист выше в очереди печати")
         self.btn_move_up.clicked.connect(self.move_row_up)
-        table_tools.addWidget(self.btn_move_up)
+        table_tools_row2.addWidget(self.btn_move_up)
 
         self.btn_move_down = QPushButton("▼ Вниз (Ctrl+↓)")
         self.btn_move_down.setProperty("cssClass", "btn_tool")
         self.btn_move_down.setToolTip("Опустить выбранный лист ниже в очереди печати")
         self.btn_move_down.clicked.connect(self.move_row_down)
-        table_tools.addWidget(self.btn_move_down)
+        table_tools_row2.addWidget(self.btn_move_down)
 
-        table_tools.addStretch()
+        table_tools_row2.addStretch()
 
         self.chk_sync_acad = QCheckBox("Подсветка в AutoCAD")
         self.chk_sync_acad.setChecked(True)
         self.chk_sync_acad.setToolTip("Автоматически центрировать и подсвечивать выбранную рамку в AutoCAD при клике или переходе стрелками")
         self.chk_sync_acad.toggled.connect(lambda _: self.save_settings())
-        table_tools.addWidget(self.chk_sync_acad)
+        table_tools_row2.addWidget(self.chk_sync_acad)
 
         btn_show_acad = QPushButton("В AutoCAD")
         btn_show_acad.setProperty("cssClass", "btn_tool")
         btn_show_acad.setToolTip("Центрировать выбранную рамку в окне AutoCAD и развернуть окно")
         btn_show_acad.clicked.connect(self.show_current_frame_in_autocad)
-        table_tools.addWidget(btn_show_acad)
+        table_tools_row2.addWidget(btn_show_acad)
 
-        left_layout.addLayout(table_tools)
-        main_layout.addLayout(left_layout, stretch=3)
+        left_layout.addLayout(table_tools_row2)
+        main_layout.addLayout(left_layout, stretch=1)
 
-        # ПРАВАЯ ЧАСТЬ
-        right_layout = QVBoxLayout()
+        # ПРАВАЯ ЧАСТЬ (фиксированная компактная панель настроек)
+        right_widget = QWidget()
+        right_widget.setMinimumWidth(240)
+        right_widget.setMaximumWidth(310)
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
         group_printer = QGroupBox("Настройки печати")
         form_layout = QFormLayout(group_printer)
-        form_layout.setSpacing(15)
+        form_layout.setSpacing(12)
         
         self.combo_printers = QComboBox()
         self.combo_printers.currentTextChanged.connect(self.on_printer_changed)
@@ -439,7 +457,7 @@ class PrintManagerUI(QMainWindow):
         self.combo_papers = QComboBox()
         self.combo_papers.setToolTip("Используется только если программа не смогла автоматически подобрать нужный размер бумаги для рамки (например, если в принтере нет такого формата)")
         self.combo_papers.currentTextChanged.connect(lambda _: self.save_settings())
-        form_layout.addRow(QLabel("Резервный формат:"), self.combo_papers)
+        form_layout.addRow(QLabel("Резервный:"), self.combo_papers)
         
         self.combo_style = QComboBox()
         self.combo_style.currentTextChanged.connect(lambda _: self.save_settings())
@@ -449,6 +467,10 @@ class PrintManagerUI(QMainWindow):
         self.combo_mode.addItems(["В отдельные файлы", "В один файл (PDF)"])
         self.combo_mode.currentTextChanged.connect(lambda _: self.save_settings())
         form_layout.addRow(QLabel("Режим:"), self.combo_mode)
+
+        for cb in [self.combo_printers, self.combo_papers, self.combo_style, self.combo_mode]:
+            cb.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            cb.setMinimumContentsLength(8)
 
         self.chk_open_after = QCheckBox("Открыть результат")
         self.chk_open_after.setChecked(True)
@@ -465,7 +487,7 @@ class PrintManagerUI(QMainWindow):
         self.btn_print.clicked.connect(self.print_selected_frames)
         right_layout.addWidget(self.btn_print)
         
-        main_layout.addLayout(right_layout, stretch=1)
+        main_layout.addWidget(right_widget)
 
     def apply_initial_config(self):
         """Применяет сохраненные настройки из config.json к элементам интерфейса."""
