@@ -106,5 +106,65 @@ class TestBlockExportLogic(unittest.TestCase):
         self.assertEqual(frames, [])
 
 
+    def test_block_title_page_detection(self):
+        from core.models import frame_natural_sort_key
+
+        raw_items = [
+            {
+                "handle": "200A",
+                "block_name": "SHT_A3",
+                "sheet_number": "1",
+                "sheet_name": "План этажа",
+                "scale": 1.0,
+                "min_x": 0.0,
+                "min_y": 0.0,
+                "max_x": 420.0,
+                "max_y": 297.0
+            },
+            {
+                "handle": "200B",
+                "block_name": "SHT_A4",
+                "sheet_number": "Unknown",
+                "sheet_name": "Титульный лист",
+                "scale": 1.0,
+                "min_x": 1000.0,
+                "min_y": 0.0,
+                "max_x": 1210.0,
+                "max_y": 297.0
+            },
+            {
+                "handle": "200C",
+                "block_name": "SHT_TITLE_A4",
+                "sheet_number": "",
+                "sheet_name": "",
+                "scale": 1.0,
+                "min_x": 2000.0,
+                "min_y": 0.0,
+                "max_x": 2210.0,
+                "max_y": 297.0
+            }
+        ]
+        frames = self.parser._convert_items_to_frames(raw_items)
+        self.assertEqual(len(frames), 3)
+
+        # Обычный лист
+        self.assertEqual(frames[0].sheet_number, "1")
+        self.assertEqual(frames[0].sheet_name, "План этажа")
+
+        # Титульник по атрибуту TITLE
+        self.assertEqual(frames[1].sheet_number, "")
+        self.assertEqual(frames[1].sheet_name, "Титульный лист")
+
+        # Титульник по имени блока SHT_TITLE_A4
+        self.assertEqual(frames[2].sheet_number, "")
+        self.assertEqual(frames[2].sheet_name, "Титульный лист")
+
+        # Сортировка: оба титульника должны оказаться перед листом 1
+        sorted_frames = sorted(frames, key=frame_natural_sort_key)
+        self.assertEqual(sorted_frames[0].sheet_name, "Титульный лист")
+        self.assertEqual(sorted_frames[1].sheet_name, "Титульный лист")
+        self.assertEqual(sorted_frames[2].sheet_number, "1")
+
+
 if __name__ == "__main__":
     unittest.main()

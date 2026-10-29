@@ -47,8 +47,11 @@ class BaseParser(ABC):
         with open(filepath, "r", encoding="cp1251") as f:
             text = f.read()
         clean = re.sub(r'\\U\+([0-9a-fA-F]{4})', lambda m: chr(int(m.group(1), 16)), text)
-        clean = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', clean)
-        return json.loads(clean)
+        try:
+            return json.loads(clean)
+        except json.JSONDecodeError:
+            clean = re.sub(r'(?<!\\)\\(?!["\\/bfnrtu]|u[0-9a-fA-F]{4})', r'\\\\', clean)
+            return json.loads(clean)
 
     @staticmethod
     def _wait_acad_idle(doc: Any, timeout: float = 10.0) -> bool:

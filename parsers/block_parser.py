@@ -43,6 +43,31 @@ class BlockParser(BaseParser):
                 return attrs[t]
         return ""
 
+    @staticmethod
+    def _check_is_title(sheet_num: str, sheet_name: str, block_name: str) -> tuple:
+        """
+        Проверяет, является ли блок титульным листом.
+        Возвращает (sheet_number, sheet_name).
+        """
+        clean_name = (sheet_name or "").replace("\r", " ").replace("\n", " ").strip()
+        if clean_name.lower() == "unknown":
+            clean_name = ""
+
+        clean_num = (sheet_num or "").strip()
+        if clean_num.lower() == "unknown":
+            clean_num = ""
+
+        b_lower = (block_name or "").lower()
+        is_title = (
+            clean_name.lower() in ("титульный лист", "титул", "обложка")
+            or "титул" in b_lower
+            or "title" in b_lower
+            or "обложк" in b_lower
+        )
+        if is_title:
+            return "", "Титульный лист"
+        return clean_num or "Unknown", clean_name
+
     def _convert_items_to_frames(self, items: list) -> List[Frame]:
         frames = []
         for item in items:
@@ -66,10 +91,12 @@ class BlockParser(BaseParser):
             object_name = self._get_attr_value(attrs, self.object_attr_tags)
             building_name = self._get_attr_value(attrs, self.building_attr_tags)
 
+            num, name = self._check_is_title(num, name, b_name)
+
             frame = Frame(
                 object_id=0,
                 sheet_number=num,
-                sheet_name=name.replace("\r", " ").replace("\n", " ").strip(),
+                sheet_name=name,
                 min_point=(min_x, min_y, 0.0),
                 max_point=(max_x, max_y, 0.0),
                 source_type="Block",
@@ -144,6 +171,8 @@ class BlockParser(BaseParser):
                         doc_code = self._get_attr_value(attrs, self.shifr_attr_tags)
                         object_name = self._get_attr_value(attrs, self.object_attr_tags)
                         building_name = self._get_attr_value(attrs, self.building_attr_tags)
+
+                        sheet_number, sheet_name = self._check_is_title(sheet_number, sheet_name, block_name)
 
                         w = max_pt[0] - min_pt[0]
                         h = max_pt[1] - min_pt[1]

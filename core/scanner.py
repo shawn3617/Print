@@ -28,10 +28,24 @@ class DocumentScanner:
                 print(f"[{parser.__class__.__name__}] завершен за {dt_p:.3f} сек (найдено {len(frames)} рамок)")
                 if frames:
                     all_frames.extend(frames)
-                    # Если рамки обнаружены (например СПДС), завершаем поиск без холостых переборов
-                    break
             except Exception as e:
                 print(f"Ошибка при работе парсера {parser.__class__.__name__}: {e}")
+
+        # Дедупликация рамок при совпадении координат (если несколько парсеров зацепили одну область)
+        if all_frames:
+            unique_frames = []
+            for f in all_frames:
+                dup = False
+                for u in unique_frames:
+                    if (abs(f.min_point[0] - u.min_point[0]) < 100.0 and
+                        abs(f.min_point[1] - u.min_point[1]) < 100.0 and
+                        abs(f.max_point[0] - u.max_point[0]) < 100.0 and
+                        abs(f.max_point[1] - u.max_point[1]) < 100.0):
+                        dup = True
+                        break
+                if not dup:
+                    unique_frames.append(f)
+            all_frames = unique_frames
         
         # Согласование масштабов рамок чертежа:
         # Если в чертеже преобладает определенный масштаб (например, 1:100),

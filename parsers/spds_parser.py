@@ -6,6 +6,18 @@ from parsers.base_parser import BaseParser
 
 from core.resource_utils import get_resource_path
 
+
+def clean_rtf(text: str) -> str:
+    """Очищает строку от RTF-разметки (используется СПДС в полях Sheet/PageNumber)."""
+    if not text or "{\\rtf" not in text:
+        return text
+    s = text
+    s = re.sub(r'\{\\[^}]*\}', '', s)
+    s = re.sub(r'\\[a-zA-Z0-9]+ ?', '', s)
+    s = re.sub(r'<[^>]*>', '', s)
+    s = re.sub(r'[{}]', '', s)
+    return s.strip()
+
 class SPDSParser(BaseParser):
     def __init__(self, spds_names: List[str] = None):
         """
@@ -19,6 +31,12 @@ class SPDSParser(BaseParser):
         """Быстрый поиск СПДС-рамок через AutoLISP-экспорт во временный JSON"""
         t_start = time.perf_counter()
         data = self._run_lisp_export(doc, self.lisp_path, "sht-export-spds", prefix="acad_spds")
+        frames = self._convert_items_to_frames(data)
+        t_elapsed = time.perf_counter() - t_start
+        print(f"[SPDSParser] LISP экспорт выполнен за {t_elapsed:.3f} сек (найдено {len(frames)} рамок)")
+        return frames
+
+    def _convert_items_to_frames(self, data: list) -> List[Frame]:
         fmt_map = {k.upper(): k for k in ALL_FORMATS.keys()}
         frames = []
         for item in data:
@@ -75,11 +93,26 @@ class SPDSParser(BaseParser):
             if not detected_fmt:
                 detected_fmt = detect_paper_format(w, h, scale=sc)
 
-            shifr = str(item.get("shifr") or "").strip()
+            shifr = clean_rtf(str(item.get("shifr") or "").strip())
             fields = item.get("fields") or {}
             form = str(item.get("form") or "").strip()
-            obj_name = str(fields.get("ComplexName") or "").strip()
-            bld_name = str(fields.get("DrawingName1") or "").strip() if form == "3" else ""
+            obj_name = clean_rtf(str(fields.get("ComplexName") or "").strip())
+            bld_name = clean_rtf(str(fields.get("DrawingName1") or "").strip()) if form == "3" else ""
+
+            num = clean_rtf(num)
+            name = clean_rtf(name)
+
+            # Распознавание титульного листа СПДС (шаблон без штампа: idTemplate < 0, в т.ч. -3 титульный лист, -1 без штампа)
+            id_tmpl_str = str(fields.get("idTemplate", "")).strip()
+            try:
+                id_tmpl_val = float(id_tmpl_str)
+            except (ValueError, TypeError):
+                id_tmpl_val = None
+
+            is_title = (id_tmpl_val is not None and id_tmpl_val < 0) or name.lower() in ("титульный лист", "титул", "обложка")
+            if is_title:
+                num = ""
+                name = "Титульный лист"
 
             frame = Frame(
                 object_id=0,
@@ -96,8 +129,6 @@ class SPDSParser(BaseParser):
             )
             frames.append(frame)
 
-        t_elapsed = time.perf_counter() - t_start
-        print(f"[SPDSParser] LISP экспорт выполнен за {t_elapsed:.3f} сек (найдено {len(frames)} рамок)")
         return frames
 
     def _find_frames_fallback_com(self, doc: Any) -> List[Frame]:

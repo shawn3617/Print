@@ -258,5 +258,69 @@ class TestSPDSExportLogic(unittest.TestCase):
         self.assertEqual(len(frames), 0)
 
 
+    def test_spds_title_page_and_rtf_detection(self):
+        from parsers.spds_parser import SPDSParser, clean_rtf
+        
+        # Тест clean_rtf
+        rtf_num = '{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil\\fcharset0 CS Standard;}}  \\fs17  \\v\\embo\\impr <ref id="2094871149">\\v0\\embo0 1\\v\\embo </ref>\\v0\\embo0\\impr0  \\par  }'
+        self.assertEqual(clean_rtf(rtf_num), "1")
+
+        # Тест титульного листа SPDS (idTemplate = -3)
+        parser = SPDSParser()
+        raw_items = [
+            {
+                "handle": "48F",
+                "form": "6",
+                "sheet_number": rtf_num,
+                "sheet_name": "",
+                "shifr": "",
+                "format": "A4",
+                "multiplicity": 1,
+                "scale": 100.0,
+                "orientation": "Вертикальный",
+                "min_x": 112739.0,
+                "min_y": 6752.0,
+                "max_x": 133739.0,
+                "max_y": 36452.0,
+                "fields": {
+                    "idTemplate": "-3"
+                }
+            },
+            {
+                "handle": "490",
+                "form": "3",
+                "sheet_number": "2",
+                "sheet_name": "План перекрытия",
+                "shifr": "01-24",
+                "format": "A3",
+                "scale": 100.0,
+                "min_x": 0.0,
+                "min_y": 0.0,
+                "max_x": 42000.0,
+                "max_y": 29700.0,
+                "fields": {
+                    "idTemplate": "3"
+                }
+            }
+        ]
+        frames = parser._convert_items_to_frames(raw_items)
+        self.assertEqual(len(frames), 2)
+        
+        # Титульник должен иметь пустой номер и имя "Титульный лист"
+        self.assertEqual(frames[0].sheet_number, "")
+        self.assertEqual(frames[0].sheet_name, "Титульный лист")
+        self.assertEqual(frames[0].paper_format, "A4")
+        
+        # Обычный лист
+        self.assertEqual(frames[1].sheet_number, "2")
+        self.assertEqual(frames[1].sheet_name, "План перекрытия")
+
+        # Проверка сортировки: титульник всегда первый
+        from core.models import frame_natural_sort_key
+        sorted_frames = sorted(frames, key=frame_natural_sort_key)
+        self.assertEqual(sorted_frames[0].sheet_name, "Титульный лист")
+        self.assertEqual(sorted_frames[1].sheet_number, "2")
+
+
 if __name__ == "__main__":
     unittest.main()
