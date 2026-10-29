@@ -288,6 +288,12 @@ class PrintManagerUI(QMainWindow):
         btn_clear.clicked.connect(self.clear_frames)
         batch_bar.addWidget(btn_clear)
 
+        btn_close_opened = QPushButton("Закрыть чертежи программы")
+        btn_close_opened.setProperty("cssClass", "btn_tool")
+        btn_close_opened.setToolTip("Закрыть в AutoCAD все чертежи, которые были открыты программой (для просмотра или печати)")
+        btn_close_opened.clicked.connect(self.close_opened_documents_dialog)
+        batch_bar.addWidget(btn_close_opened)
+
         batch_bar.addStretch()
         left_layout.addLayout(batch_bar)
 
@@ -564,6 +570,40 @@ class PrintManagerUI(QMainWindow):
         self.apply_filter()
         self.update_print_counter()
 
+    def close_opened_documents_dialog(self):
+        """
+        Закрывает в AutoCAD все чертежи, которые были открыты этой программой,
+        не затрагивая чертежи пользователя.
+        """
+        try:
+            self.connector.connect()
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка подключения", f"Не удалось подключиться к AutoCAD:\n{e}\n\nУбедитесь, что AutoCAD запущен.")
+            return
+
+        try:
+            self.connector.clear_highlight()
+            closed_count = self.connector.close_opened_documents()
+            self.refresh_document_status()
+            if closed_count > 0:
+                QMessageBox.information(
+                    self,
+                    "Закрытие чертежей",
+                    f"Успешно закрыто чертежей, открытых программой: {closed_count}."
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "Закрытие чертежей",
+                    "Нет чертежей, открытых программой (все чертежи уже закрыты или были открыты вами вручную)."
+                )
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Ошибка",
+                f"Произошла ошибка при закрытии чертежей:\n{e}"
+            )
+
     def process_batch_dwg_files(self, file_paths):
         if not file_paths:
             return
@@ -706,17 +746,68 @@ class PrintManagerUI(QMainWindow):
         self.combo_papers.addItems(papers)
         
         # Пытаемся восстановить сохраненный или ISO full bleed A2
+        # Восстановление сохраненного формата (игнорируя устаревший случайный B5)
         saved_paper = self.config_manager.get("fallback_paper", "")
+        if isinstance(saved_paper, str) and ("b5" in saved_paper.lower() or "в5" in saved_paper.lower()):
+            saved_paper = ""
+
         idx_saved = -1
         if isinstance(saved_paper, str) and saved_paper:
             idx_saved = self.combo_papers.findText(saved_paper)
         if idx_saved >= 0:
             self.combo_papers.setCurrentIndex(idx_saved)
         else:
-            for i, paper in enumerate(papers):
-                if "A2" in paper and "full bleed" in paper.lower():
-                    self.combo_papers.setCurrentIndex(i)
+            # Ищем наилучший резервный формат (приоритет: А3 без полей -> любой А3 -> А1 без полей -> любой А1 -> А2)
+            chosen_idx = -1
+
+            def is_bleed(p_name: str) -> bool:
+                pl = p_name.lower()
+                return "без полей" in pl or "full bleed" in pl
+
+            # 1. А3 альбомный без полей (420 x 297)
+            for i, p in enumerate(papers):
+                pl = p.lower()
+                if ("a3" in pl or "а3" in pl) and is_bleed(p) and "420" in pl:
+                    chosen_idx = i
                     break
+            # 2. Любой А3 без полей
+            if chosen_idx < 0:
+                for i, p in enumerate(papers):
+                    pl = p.lower()
+                    if ("a3" in pl or "а3" in pl) and is_bleed(p):
+                        chosen_idx = i
+                        break
+            # 3. Любой А3
+            if chosen_idx < 0:
+                for i, p in enumerate(papers):
+                    pl = p.lower()
+                    if "a3" in pl or "а3" in pl:
+                        chosen_idx = i
+                        break
+            # 4. А1 без полей
+            if chosen_idx < 0:
+                for i, p in enumerate(papers):
+                    pl = p.lower()
+                    if ("a1" in pl or "а1" in pl) and is_bleed(p):
+                        chosen_idx = i
+                        break
+            # 5. Любой А1
+            if chosen_idx < 0:
+                for i, p in enumerate(papers):
+                    pl = p.lower()
+                    if "a1" in pl or "а1" in pl:
+                        chosen_idx = i
+                        break
+            # 6. А2 без полей
+            if chosen_idx < 0:
+                for i, p in enumerate(papers):
+                    pl = p.lower()
+                    if ("a2" in pl or "а2" in pl) and is_bleed(p):
+                        chosen_idx = i
+                        break
+
+            if chosen_idx >= 0:
+                self.combo_papers.setCurrentIndex(chosen_idx)
         self.combo_papers.blockSignals(False)
                 
     def scan_frames(self):

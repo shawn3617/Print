@@ -29,6 +29,7 @@ class AutoCADConnector:
         self.app = None
         self.doc = None
         self._last_highlighted_handle = None
+        self._opened_by_us = set()
 
     def connect(self):
         """
@@ -144,6 +145,7 @@ class AutoCADConnector:
         opened = com_retry(_do_open, max_attempts=20, delay=0.35)
         doc = self._wait_document_ready(abs_path, opened)
         self.doc = doc
+        self._opened_by_us.add(abs_path.lower())
         return doc, True
 
     @staticmethod
@@ -187,19 +189,76 @@ class AutoCADConnector:
         if not doc:
             return
 
+        doc_path = ""
+        try:
+            doc_path = getattr(doc, "FullName", "")
+        except Exception:
+            pass
+
         def _do_close():
             doc.Close(save_changes)
 
         try:
-            com_retry(_do_close, max_attempts=15, delay=0.25)
+            _retry_busy(_do_close, max_attempts=15, delay=0.25)
         except Exception as e:
             print(f"Предупреждение при закрытии документа: {e}")
         finally:
+            if doc_path:
+                self._opened_by_us.discard(os.path.abspath(doc_path).lower())
+            if self.doc == doc:
+                self._last_highlighted_handle = None
             # Обновляем активный документ
             try:
                 self.doc = self.app.ActiveDocument
             except Exception:
                 self.doc = None
+
+    def close_opened_documents(self) -> int:
+        """
+        Закрывает все документы AutoCAD, которые были открыты этой программой,
+        не затрагивая документы, открытые пользователем до или во время работы программы.
+        Возвращает количество успешно закрытых чертежей.
+        """
+        if not self._opened_by_us:
+            return 0
+        if not self.app:
+            try:
+                self.connect()
+            except Exception:
+                return 0
+
+        closed_count = 0
+        paths = list(self._opened_by_us)
+        for path in paths:
+            doc = self.find_open_document(path)
+            if doc:
+                try:
+                    self.close_document(doc, save_changes=False)
+                    closed_count += 1
+                except Exception as e:
+                    print(f"Предупреждение при закрытии открытого программой чертежа '{path}': {e}")
+            else:
+                self._opened_by_us.discard(path)
+
+        try:
+            self.doc = self.app.ActiveDocument
+        except Exception:
+            self.doc = None
+
+        return closed_count
+
+    def get_opened_by_us_count(self) -> int:
+        """
+        Возвращает актуальное количество открытых программой чертежей,
+        которые все еще открыты в AutoCAD.
+        """
+        if not self._opened_by_us or not self.app:
+            return len(self._opened_by_us)
+
+        open_docs = self.get_open_documents()
+        open_paths = {os.path.abspath(p).lower() for p, _ in open_docs if p}
+        self._opened_by_us = {p for p in self._opened_by_us if p in open_paths}
+        return len(self._opened_by_us)
 
     def activate_document(self, doc):
         """
@@ -225,6 +284,7 @@ class AutoCADConnector:
         self.clear_highlight()
         self.doc = None
         self.app = None
+        self._opened_by_us.clear()
         try:
             pythoncom.CoUninitialize()
         except Exception:

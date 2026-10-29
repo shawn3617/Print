@@ -124,6 +124,71 @@ class TestBatchConnector(unittest.TestCase):
             mock_zoom.assert_called_once()
             mock_hl.assert_called_once()
 
+    @patch("os.path.exists", return_value=True)
+    def test_opened_by_us_tracking(self, mock_exists):
+        # 1. Открытие нового файла должно добавить его в _opened_by_us
+        mock_docs = MagicMock()
+        mock_docs.Count = 0
+        new_doc = MagicMock()
+        mock_docs.Open.return_value = new_doc
+        self.mock_app.Documents = mock_docs
+
+        p_new = os.path.abspath(r"C:\Drawings\new_dwg.dwg")
+        doc, was_opened = self.connector.open_document(p_new, read_only=True)
+        self.assertTrue(was_opened)
+        self.assertIn(p_new.lower(), self.connector._opened_by_us)
+
+        # 2. Открытие уже открытого чертежа не должно помечать его как opened_by_us
+        doc_existing = MagicMock()
+        doc_existing.FullName = os.path.abspath(r"C:\Drawings\user_dwg.dwg")
+        doc_existing.Name = "user_dwg.dwg"
+        mock_docs.Count = 1
+        mock_docs.Item.side_effect = lambda i: [doc_existing][i]
+
+        p_existing = os.path.abspath(r"C:\Drawings\user_dwg.dwg")
+        doc2, was_opened2 = self.connector.open_document(p_existing, read_only=True)
+        self.assertFalse(was_opened2)
+        self.assertNotIn(p_existing.lower(), self.connector._opened_by_us)
+
+    def test_close_opened_documents_only_closes_program_files(self):
+        # Пользовательский файл (открыт до программы)
+        user_doc = MagicMock()
+        user_doc.FullName = os.path.abspath(r"C:\Drawings\user.dwg")
+        user_doc.Name = "user.dwg"
+
+        # Файл, открытый программой
+        prog_doc = MagicMock()
+        prog_doc.FullName = os.path.abspath(r"C:\Drawings\prog.dwg")
+        prog_doc.Name = "prog.dwg"
+
+        all_docs = [user_doc, prog_doc]
+        mock_docs = MagicMock()
+        mock_docs.Count = len(all_docs)
+        mock_docs.Item.side_effect = lambda i: all_docs[i]
+        self.mock_app.Documents = mock_docs
+
+        # Симулируем, что prog.dwg был открыт нашей программой
+        self.connector._opened_by_us.add(os.path.abspath(r"C:\Drawings\prog.dwg").lower())
+
+        closed_count = self.connector.close_opened_documents()
+
+        self.assertEqual(closed_count, 1)
+        prog_doc.Close.assert_called_once_with(False)
+        user_doc.Close.assert_not_called()
+        self.assertEqual(len(self.connector._opened_by_us), 0)
+
+    def test_get_opened_by_us_count_prunes_closed(self):
+        # Если чертеж числился в _opened_by_us, но пользователь закрыл его в AutoCAD вручную
+        self.connector._opened_by_us.add(os.path.abspath(r"C:\Drawings\already_closed.dwg").lower())
+        
+        mock_docs = MagicMock()
+        mock_docs.Count = 0
+        self.mock_app.Documents = mock_docs
+
+        count = self.connector.get_opened_by_us_count()
+        self.assertEqual(count, 0)
+        self.assertEqual(len(self.connector._opened_by_us), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

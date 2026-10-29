@@ -66,7 +66,19 @@ class TestBatchPrinter(unittest.TestCase):
         self.assertIn("[plan1] Лист 1 - План 1.pdf", printed_files[0])
         self.assertIn("[plan2] Лист 1 - План 2.pdf", printed_files[1])
 
-        # doc2 был открыт в процессе -> close_document должен быть вызван для doc2
+        # По принятому решению чертежи, открытые программой, по умолчанию не закрываются
+        mock_connector.close_document.assert_not_called()
+
+        # Если явно передан флаг close_opened_docs=True — чертежи закрываются
+        printer.print_frames(
+            frames=[frame1, frame2],
+            printer_name="DWG To PDF.pc3",
+            canonical_media_name="ISO_A4",
+            style_name="monochrome.ctb",
+            output_path=os.path.abspath("C:/Out"),
+            merge_pdf=False,
+            close_opened_docs=True
+        )
         mock_connector.close_document.assert_called_once_with(doc2, save_changes=False)
 
 

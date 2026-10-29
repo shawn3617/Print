@@ -90,6 +90,38 @@ class TestBatchUI(unittest.TestCase):
             self.assertEqual(len(args), 1)
             self.assertTrue(args[0].endswith("test1.dwg"))
 
+    def test_update_paper_sizes_picks_a3_fallback(self):
+        self.win.printer = MagicMock()
+        self.win.printer.get_media_names.return_value = {
+            "ISO без полей B5 (250.00 x 176.00 мм)": "ISO_B5",
+            "ISO A4 (210.00 x 297.00 мм)": "ISO_A4",
+            "ISO без полей A3 (420.00 x 297.00 мм)": "ISO_A3_Bleed",
+            "ISO A1 (594.00 x 841.00 мм)": "ISO_A1",
+        }
+        self.mock_config.get.side_effect = lambda k, d=None: "" if k == "fallback_paper" else d
+        self.win.update_paper_sizes("DWG To PDF.pc3")
+        self.assertEqual(self.win.combo_papers.currentText(), "ISO без полей A3 (420.00 x 297.00 мм)")
+
+    def test_update_paper_sizes_ignores_old_b5(self):
+        self.win.printer = MagicMock()
+        self.win.printer.get_media_names.return_value = {
+            "ISO без полей B5 (250.00 x 176.00 мм)": "ISO_B5",
+            "ISO без полей A3 (420.00 x 297.00 мм)": "ISO_A3_Bleed",
+        }
+        self.mock_config.get.side_effect = lambda k, d=None: "ISO без полей B5 (250.00 x 176.00 мм)" if k == "fallback_paper" else d
+        self.win.update_paper_sizes("DWG To PDF.pc3")
+        self.assertEqual(self.win.combo_papers.currentText(), "ISO без полей A3 (420.00 x 297.00 мм)")
+
+    def test_update_paper_sizes_restores_valid_custom(self):
+        self.win.printer = MagicMock()
+        self.win.printer.get_media_names.return_value = {
+            "ISO без полей A3 (420.00 x 297.00 мм)": "ISO_A3_Bleed",
+            "ISO A1 (594.00 x 841.00 мм)": "ISO_A1",
+        }
+        self.mock_config.get.side_effect = lambda k, d=None: "ISO A1 (594.00 x 841.00 мм)" if k == "fallback_paper" else d
+        self.win.update_paper_sizes("DWG To PDF.pc3")
+        self.assertEqual(self.win.combo_papers.currentText(), "ISO A1 (594.00 x 841.00 мм)")
+
 
 if __name__ == "__main__":
     unittest.main()
