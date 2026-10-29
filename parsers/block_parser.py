@@ -57,12 +57,16 @@ class BlockParser(BaseParser):
         if clean_num.lower() == "unknown":
             clean_num = ""
 
-        b_lower = (block_name or "").lower()
+        b_lower = (block_name or "").lower().strip()
         is_title = (
             clean_name.lower() in ("титульный лист", "титул", "обложка")
             or "титул" in b_lower
             or "title" in b_lower
             or "обложк" in b_lower
+            or b_lower.endswith("_t")
+            or b_lower.endswith("_т")
+            or "_t_" in b_lower
+            or "_т_" in b_lower
         )
         if is_title:
             return "", "Титульный лист"

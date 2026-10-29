@@ -142,10 +142,25 @@ class TestBlockExportLogic(unittest.TestCase):
                 "min_y": 0.0,
                 "max_x": 2210.0,
                 "max_y": 297.0
+            },
+            {
+                "handle": "200D",
+                "block_name": "SHT_A4P_T",
+                "sheet_number": "Unknown",
+                "sheet_name": "",
+                "scale": 100.0,
+                "min_x": 4140.0,
+                "min_y": 3870.0,
+                "max_x": 25140.0,
+                "max_y": 33570.0,
+                "attrs": {
+                    "FORMAT": "A4",
+                    "ORIENT": "вертикальная"
+                }
             }
         ]
         frames = self.parser._convert_items_to_frames(raw_items)
-        self.assertEqual(len(frames), 3)
+        self.assertEqual(len(frames), 4)
 
         # Обычный лист
         self.assertEqual(frames[0].sheet_number, "1")
@@ -159,11 +174,17 @@ class TestBlockExportLogic(unittest.TestCase):
         self.assertEqual(frames[2].sheet_number, "")
         self.assertEqual(frames[2].sheet_name, "Титульный лист")
 
-        # Сортировка: оба титульника должны оказаться перед листом 1
+        # Титульник по суффиксу _T (пользовательский блок SHT_A4P_T)
+        self.assertEqual(frames[3].sheet_number, "")
+        self.assertEqual(frames[3].sheet_name, "Титульный лист")
+        self.assertEqual(frames[3].paper_format, "A4")
+
+        # Сортировка: все титульники должны оказаться перед листом 1
         sorted_frames = sorted(frames, key=frame_natural_sort_key)
         self.assertEqual(sorted_frames[0].sheet_name, "Титульный лист")
         self.assertEqual(sorted_frames[1].sheet_name, "Титульный лист")
-        self.assertEqual(sorted_frames[2].sheet_number, "1")
+        self.assertEqual(sorted_frames[2].sheet_name, "Титульный лист")
+        self.assertEqual(sorted_frames[3].sheet_number, "1")
 
 
 if __name__ == "__main__":
