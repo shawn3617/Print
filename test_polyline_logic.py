@@ -1,5 +1,6 @@
 import unittest
 from parsers.polyline_parser import analyze
+from core.models import Frame, frame_natural_sort_key
 
 class TestPolylineLogic(unittest.TestCase):
     def test_form_4_detection(self):
@@ -28,6 +29,9 @@ class TestPolylineLogic(unittest.TestCase):
         self.assertEqual(f["scale"], 100.0)
         self.assertEqual(f["sheet_number"], "1")
         self.assertEqual(f["sheet_name"], "Изделие закладное Зд3")
+        self.assertEqual(f["doc_code"], "09-23-4-КЖ.НЦ1.И-Зд3")
+        self.assertEqual(f["object_name"], "")
+        self.assertEqual(f["building_name"], "")
 
     def test_form_3_detection(self):
         # Рамка A2 (масштаб 1:10, внешняя 5940x4200, внутренняя 5690x4100)
@@ -42,6 +46,8 @@ class TestPolylineLogic(unittest.TestCase):
             (6164.4 - 10.0 * 10, 214.0 + 27.5 * 10, "Листов"),
             (6164.4 - 42.5 * 10, 214.0 + 27.5 * 10, "Стадия"),
             (6164.4 - 85.0 * 10, 214.0 + 7.5 * 10, "Пилон R90 12.30.26-22∅25-П5"),
+            (6164.4 - 85.0 * 10, 214.0 + 22.0 * 10, "Позиция 4.1"),
+            (6164.4 - 60.0 * 10, 214.0 + 38.0 * 10, "Жилой комплекс"),
             (6164.4 - 60.0 * 10, 214.0 + 49.7 * 10, "09-23-4-КЖ.НЦ1"),
         ]
 
@@ -52,6 +58,57 @@ class TestPolylineLogic(unittest.TestCase):
         self.assertEqual(f["scale"], 10.0)
         self.assertEqual(f["sheet_number"], "9")
         self.assertEqual(f["sheet_name"], "Пилон R90 12.30.26-22∅25-П5")
+        self.assertEqual(f["doc_code"], "09-23-4-КЖ.НЦ1")
+        self.assertEqual(f["object_name"], "Жилой комплекс")
+        self.assertEqual(f["building_name"], "Позиция 4.1")
+
+    def test_title_page_detection_and_ordering(self):
+        # Лист 1: Форма 4 (A4, 1:100)
+        p1_out = {"bbox": (0, 0, 21000, 29700), "ref": None, "ltscale": 100.0}
+        p1_in = {"bbox": (2000, 500, 20500, 29200), "ref": None, "ltscale": 100.0}
+        texts1 = [
+            (20500 - 34.7 * 100, 500 + 17.5 * 100, "1"),
+            (20500 - 44.7 * 100, 500 + 17.4 * 100, "Лист"),
+            (20500 - 85.0 * 100, 500 + 27.5 * 100, "Изделие Зд3"),
+            (20500 - 28.5 * 100, 500 + 37.2 * 100, "Масса"),
+            (20500 - 60.0 * 100, 500 + 47.2 * 100, "09-23-4-КЖ.НЦ1.И-Зд3"),
+        ]
+
+        # Лист Титульный: внешняя и внутренняя рамка A4, но штамп пустой
+        p_title_out = {"bbox": (50000, 0, 71000, 29700), "ref": None, "ltscale": 100.0}
+        p_title_in = {"bbox": (52000, 500, 70500, 29200), "ref": None, "ltscale": 100.0}
+        # Только текст под рамкой ("Формат A4")
+        texts_title = [
+            (70500 - 32.5 * 100, 500 - 2.8 * 100, "Формат"),
+            (70500 - 12.2 * 100, 500 - 2.5 * 100, "A4"),
+        ]
+
+        all_polys = [p1_out, p1_in, p_title_out, p_title_in]
+        all_texts = texts1 + texts_title
+
+        frames = analyze(all_polys, all_texts)
+        self.assertEqual(len(frames), 2)
+        # Титульный лист ВСЕГДА должен идти первым!
+        self.assertEqual(frames[0]["sheet_name"], "Титульный лист")
+        self.assertEqual(frames[0]["sheet_number"], "")
+        self.assertEqual(frames[0]["format"], "A4")
+        self.assertEqual(frames[0]["doc_code"], "")
+        self.assertEqual(frames[0]["object_name"], "")
+        self.assertEqual(frames[0]["building_name"], "")
+
+        self.assertEqual(frames[1]["sheet_name"], "Изделие Зд3")
+        self.assertEqual(frames[1]["sheet_number"], "1")
+        self.assertEqual(frames[1]["format"], "A4")
+        self.assertEqual(frames[1]["doc_code"], "09-23-4-КЖ.НЦ1.И-Зд3")
+
+    def test_frame_natural_sort_key_title_priority(self):
+        f_title = Frame(1, "", "Титульный лист", (0,0,0), (10,10,0), "Polyline")
+        f1 = Frame(2, "1", "План 1", (0,0,0), (10,10,0), "Polyline")
+        f2 = Frame(3, "2", "План 2", (0,0,0), (10,10,0), "Polyline")
+
+        raw_list = [f2, f1, f_title]
+        raw_list.sort(key=frame_natural_sort_key)
+        self.assertEqual(raw_list, [f_title, f1, f2])
 
 if __name__ == "__main__":
     unittest.main()

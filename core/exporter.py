@@ -4,7 +4,17 @@ from core.models import Frame
 
 
 class SheetExporter:
-    HEADERS = ["№ п/п", "Лист", "Наименование листа", "Формат", "Чертеж", "Источник"]
+    HEADERS = [
+        "№ п/п",
+        "Лист",
+        "Обозначение документа",
+        "Наименование листа",
+        "Объект строительства",
+        "Здание / сооружение",
+        "Формат",
+        "Чертеж",
+        "Источник"
+    ]
 
     @classmethod
     def export(cls, frames: List[Frame], filepath: str):
@@ -24,7 +34,10 @@ class SheetExporter:
                 writer.writerow([
                     i,
                     f_obj.sheet_number,
+                    f_obj.doc_code or "",
                     f_obj.sheet_name,
+                    f_obj.object_name or "",
+                    f_obj.building_name or "",
                     f_obj.paper_format,
                     f_obj.dwg_name or "",
                     f_obj.source_type or ""
@@ -67,7 +80,10 @@ class SheetExporter:
             ws.append([
                 i,
                 f_obj.sheet_number,
+                f_obj.doc_code or "",
                 f_obj.sheet_name,
+                f_obj.object_name or "",
+                f_obj.building_name or "",
                 f_obj.paper_format,
                 f_obj.dwg_name or "",
                 f_obj.source_type or ""
@@ -76,7 +92,7 @@ class SheetExporter:
                 cell = ws.cell(row=row_num, column=col_idx)
                 cell.font = data_font
                 cell.border = thin_border
-                if col_idx in (1, 2, 4, 6):
+                if col_idx in (1, 2, 7, 9):
                     cell.alignment = Alignment(horizontal="center", vertical="center")
                 else:
                     cell.alignment = Alignment(horizontal="left", vertical="center")

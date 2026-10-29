@@ -33,10 +33,10 @@ class TestBatchUI(unittest.TestCase):
         )
         self.assertEqual(self.win.table.rowCount(), 1)
         self.assertEqual(self.win.table.item(0, 1).text(), "1")
-        self.assertEqual(self.win.table.item(0, 2).text(), "План этажа")
-        self.assertEqual(self.win.table.item(0, 3).text(), "A3")
-        self.assertEqual(self.win.table.item(0, 4).text(), "plan_01.dwg")
-        self.assertEqual(self.win.table.item(0, 5).text(), "Model")
+        self.assertEqual(self.win.table.item(0, 3).text(), "План этажа")
+        self.assertEqual(self.win.table.item(0, 6).text(), "A3")
+        self.assertEqual(self.win.table.item(0, 7).text(), "plan_01.dwg")
+        self.assertEqual(self.win.table.item(0, 8).text(), "Model")
 
     def test_clear_frames(self):
         self.win.frames = [

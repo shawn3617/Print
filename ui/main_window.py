@@ -20,7 +20,7 @@ from core.autocad_connector import AutoCADConnector
 from core.scanner import DocumentScanner
 from core.printer import BatchPrinter, PrintCancelledError
 from core.config_manager import ConfigManager
-from core.models import natural_sheet_sort_key
+from core.models import natural_sheet_sort_key, frame_natural_sort_key
 from core.exporter import SheetExporter
 
 
@@ -328,15 +328,31 @@ class PrintManagerUI(QMainWindow):
 
         left_layout.addLayout(filter_bar)
 
-        self.table = ReorderableTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(["Печать", "Лист", "Название листа", "Формат", "Чертеж", "Источник"])
+        self.table = ReorderableTableWidget(0, 9)
+        self.table.setHorizontalHeaderLabels([
+            "Печать",
+            "Лист",
+            "Обозначение документа",
+            "Название листа",
+            "Объект строительства",
+            "Здание / сооружение",
+            "Формат",
+            "Чертеж",
+            "Источник"
+        ])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().resizeSection(2, 160)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
-        self.table.horizontalHeader().resizeSection(4, 150)
-        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().resizeSection(4, 200)
+        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().resizeSection(5, 170)
+        self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().resizeSection(7, 130)
+        self.table.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(True)
         self.table.setToolTip("Листы можно перетаскивать мышкой или перемещать кнопками «Вверх» / «Вниз» (Ctrl+↑ / Ctrl+↓).\nМожно перетаскивать файлы DWG из проводника прямо в окно программы.")
@@ -652,7 +668,10 @@ class PrintManagerUI(QMainWindow):
                         frame.sheet_name,
                         frame.paper_format,
                         frame.source_type,
-                        dwg_name=frame.dwg_name
+                        dwg_name=frame.dwg_name,
+                        doc_code=frame.doc_code,
+                        object_name=frame.object_name,
+                        building_name=frame.building_name
                     )
             finally:
                 self._is_updating_table = False
@@ -833,7 +852,10 @@ class PrintManagerUI(QMainWindow):
                         frame.sheet_name,
                         frame.paper_format,
                         frame.source_type,
-                        dwg_name=frame.dwg_name
+                        dwg_name=frame.dwg_name,
+                        doc_code=frame.doc_code,
+                        object_name=frame.object_name,
+                        building_name=frame.building_name
                     )
             finally:
                 self._is_updating_table = False
@@ -848,7 +870,18 @@ class PrintManagerUI(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при сканировании: {e}")
 
-    def add_table_row(self, checked: bool, num: str, name: str, paper_format: str, source: str, dwg_name: str = ""):
+    def add_table_row(
+        self,
+        checked: bool,
+        num: str,
+        name: str,
+        paper_format: str,
+        source: str,
+        dwg_name: str = "",
+        doc_code: str = "",
+        object_name: str = "",
+        building_name: str = ""
+    ):
         row = self.table.rowCount()
         self.table.insertRow(row)
         
@@ -869,8 +902,21 @@ class PrintManagerUI(QMainWindow):
         item_num = QTableWidgetItem(num)
         item_num.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         
+        item_code = QTableWidgetItem(doc_code)
+        item_code.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        item_code.setToolTip(doc_code)
+
         item_name = QTableWidgetItem(name)
-        
+        item_name.setToolTip(name)
+
+        item_obj = QTableWidgetItem(object_name)
+        item_obj.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        item_obj.setToolTip(object_name)
+
+        item_bld = QTableWidgetItem(building_name)
+        item_bld.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        item_bld.setToolTip(building_name)
+
         item_fmt = QTableWidgetItem(paper_format)
         item_fmt.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -882,14 +928,17 @@ class PrintManagerUI(QMainWindow):
         item_src.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         
         flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsDragEnabled
-        for it in (item_num, item_name, item_fmt, item_dwg, item_src):
+        for it in (item_num, item_code, item_name, item_obj, item_bld, item_fmt, item_dwg, item_src):
             it.setFlags(flags)
             
         self.table.setItem(row, 1, item_num)
-        self.table.setItem(row, 2, item_name)
-        self.table.setItem(row, 3, item_fmt)
-        self.table.setItem(row, 4, item_dwg)
-        self.table.setItem(row, 5, item_src)
+        self.table.setItem(row, 2, item_code)
+        self.table.setItem(row, 3, item_name)
+        self.table.setItem(row, 4, item_obj)
+        self.table.setItem(row, 5, item_bld)
+        self.table.setItem(row, 6, item_fmt)
+        self.table.setItem(row, 7, item_dwg)
+        self.table.setItem(row, 8, item_src)
         
     def is_filter_active(self) -> bool:
         """Возвращает True, если активен поиск по тексту или выбран конкретный формат."""
@@ -961,9 +1010,15 @@ class PrintManagerUI(QMainWindow):
                 name_str = str(frame.sheet_name or "").lower()
                 fmt_str = str(frame.paper_format or "").lower()
                 dwg_str = str(frame.dwg_name or "").lower()
+                code_str = str(getattr(frame, 'doc_code', '') or '').lower()
+                obj_str = str(getattr(frame, 'object_name', '') or '').lower()
+                bld_str = str(getattr(frame, 'building_name', '') or '').lower()
                 match_text = (
                     search_text in num_str or
                     search_text in name_str or
+                    search_text in code_str or
+                    search_text in obj_str or
+                    search_text in bld_str or
                     search_text in fmt_str or
                     search_text in dwg_str
                 )
@@ -1103,7 +1158,10 @@ class PrintManagerUI(QMainWindow):
                     f.sheet_name,
                     f.paper_format,
                     f.source_type,
-                    dwg_name=f.dwg_name
+                    dwg_name=f.dwg_name,
+                    doc_code=f.doc_code,
+                    object_name=f.object_name,
+                    building_name=f.building_name
                 )
         finally:
             self._is_updating_table = False
@@ -1129,12 +1187,7 @@ class PrintManagerUI(QMainWindow):
         for i in range(self.table.rowCount()):
             pairs.append((self.frames[i], self.is_row_checked(i)))
             
-        def sort_key(item):
-            frame = item[0]
-            dwg_part = frame.dwg_name.lower() if frame.dwg_name else ""
-            return (natural_sheet_sort_key(frame.sheet_number), dwg_part)
-
-        pairs.sort(key=sort_key)
+        pairs.sort(key=lambda item: frame_natural_sort_key(item[0]))
         self.frames = [p[0] for p in pairs]
         checked_states = [p[1] for p in pairs]
         
@@ -1148,7 +1201,10 @@ class PrintManagerUI(QMainWindow):
                     frame.sheet_name,
                     frame.paper_format,
                     frame.source_type,
-                    dwg_name=frame.dwg_name
+                    dwg_name=frame.dwg_name,
+                    doc_code=frame.doc_code,
+                    object_name=frame.object_name,
+                    building_name=frame.building_name
                 )
         finally:
             self._is_updating_table = False

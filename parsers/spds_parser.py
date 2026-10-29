@@ -75,6 +75,12 @@ class SPDSParser(BaseParser):
             if not detected_fmt:
                 detected_fmt = detect_paper_format(w, h, scale=sc)
 
+            shifr = str(item.get("shifr") or "").strip()
+            fields = item.get("fields") or {}
+            form = str(item.get("form") or "").strip()
+            obj_name = str(fields.get("ComplexName") or "").strip()
+            bld_name = str(fields.get("DrawingName1") or "").strip() if form == "3" else ""
+
             frame = Frame(
                 object_id=0,
                 sheet_number=num,
@@ -83,7 +89,10 @@ class SPDSParser(BaseParser):
                 max_point=(max_x, max_y, 0.0),
                 source_type="SPDS",
                 paper_format=detected_fmt,
-                handle=hdl
+                handle=hdl,
+                doc_code=shifr,
+                object_name=obj_name,
+                building_name=bld_name
             )
             frames.append(frame)
 

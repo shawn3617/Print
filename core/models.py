@@ -173,6 +173,19 @@ def natural_sheet_sort_key(sheet_number: str):
             result.append((1, token.lower()))
     return result if result else [(0, 0)]
 
+def frame_natural_sort_key(frame: Any):
+    """
+    Ключ сортировки рамок чертежа:
+    - Титульный лист всегда идет первым (приоритет 0);
+    - Остальные листы сортируются по естественному порядку номеров (приоритет 1);
+    - При одинаковых номерах учитывается имя файла чертежа (dwg_name).
+    """
+    sheet_name = getattr(frame, "sheet_name", "") or ""
+    is_title = 0 if sheet_name.strip().lower() == "титульный лист" else 1
+    sheet_number = getattr(frame, "sheet_number", "") or ""
+    dwg_part = (getattr(frame, "dwg_name", "") or "").lower()
+    return (is_title, natural_sheet_sort_key(sheet_number), dwg_part)
+
 @dataclass
 
 class Frame:
@@ -189,4 +202,7 @@ class Frame:
     handle: str = ""                        # Handle объекта в AutoCAD (устойчивый HEX-идентификатор)
     dwg_path: str = ""                      # Полный путь к исходному DWG-файлу
     dwg_name: str = ""                      # Имя файла чертежа (например "План.dwg")
+    doc_code: str = ""                      # Обозначение документа (графа 1)
+    object_name: str = ""                   # Наименование объекта строительства (графа 2)
+    building_name: str = ""                 # Наименование здания / сооружения (графа 3)
 

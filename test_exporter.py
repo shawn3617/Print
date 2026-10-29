@@ -35,9 +35,9 @@ class TestSheetExporter(unittest.TestCase):
 
                 row1 = reader[1]
                 self.assertEqual(row1[1], "1")
-                self.assertEqual(row1[2], "Общие данные")
-                self.assertEqual(row1[3], "A4")
-                self.assertEqual(row1[4], "01_plan.dwg")
+                self.assertEqual(row1[3], "Общие данные")
+                self.assertEqual(row1[6], "A4")
+                self.assertEqual(row1[7], "01_plan.dwg")
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
@@ -56,8 +56,8 @@ class TestSheetExporter(unittest.TestCase):
             self.assertEqual(ws.max_row, 4)
             self.assertEqual(ws.cell(row=1, column=2).value, "Лист")
             self.assertEqual(ws.cell(row=2, column=2).value, "1")
-            self.assertEqual(ws.cell(row=2, column=3).value, "Общие данные")
-            self.assertEqual(ws.cell(row=2, column=4).value, "A4")
+            self.assertEqual(ws.cell(row=2, column=4).value, "Общие данные")
+            self.assertEqual(ws.cell(row=2, column=7).value, "A4")
             wb.close()
         finally:
             if os.path.exists(temp_path):

@@ -1,5 +1,5 @@
 from typing import List
-from core.models import Frame, natural_sheet_sort_key
+from core.models import Frame, natural_sheet_sort_key, frame_natural_sort_key
 from parsers.block_parser import BlockParser
 
 from parsers.spds_parser import SPDSParser
@@ -77,7 +77,7 @@ class DocumentScanner:
                 f.dwg_name = doc_name
 
         # Сортируем рамки по номеру листа с естественной сортировкой (4, 4а, 4.1, 5...)
-        all_frames.sort(key=lambda f: natural_sheet_sort_key(f.sheet_number))
+        all_frames.sort(key=frame_natural_sort_key)
         return all_frames
 
 
@@ -225,7 +225,7 @@ class DocumentScanner:
                 pass
                 
         # Сквозная сортировка всех рамок по номеру листа
-        all_frames.sort(key=lambda f: (natural_sheet_sort_key(f.sheet_number), f.dwg_name.lower() if f.dwg_name else ""))
+        all_frames.sort(key=frame_natural_sort_key)
         return all_frames
 
 

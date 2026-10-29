@@ -4,7 +4,7 @@ from typing import List, Any, Optional, Tuple
 import pythoncom
 import win32com.client
 
-from core.models import Frame, detect_paper_format, ALL_FORMATS
+from core.models import Frame, detect_paper_format, ALL_FORMATS, natural_sheet_sort_key
 from parsers.base_parser import BaseParser
 
 
@@ -19,10 +19,14 @@ MARGIN_LEFT, MARGIN_OTHER = 20.0, 5.0
 # Графы формы 3 (185×55, основной комплект рабочих чертежей) — в мм от правого нижнего угла ВНУТРЕННЕЙ рамки:
 CELL_SHEET_NUM_F3 = (-35.0, -20.0, 15.0, 25.0)    # графа 7 «Лист»
 CELL_SHEET_NAME_F3 = (-120.0, -50.0, 0.0, 16.0)   # графа 4 «Наименование листа» (нижняя строка)
+CELL_BUILDING_NAME_F3 = (-120.0, -50.0, 15.0, 30.0) # графа 3 «Наименование здания (сооружения)»
+CELL_OBJECT_NAME_F3 = (-120.0, 0.0, 30.0, 45.0)    # графа 2 «Наименование объекта строительства»
+CELL_DOC_CODE_F3 = (-120.0, 0.0, 45.0, 56.0)       # графа 1 «Обозначение документа (шифр)»
 
 # Графы формы 4 (185×55, чертежи строительных изделий):
 CELL_SHEET_NUM_F4 = (-40.0, -22.0, 14.0, 22.0)    # «Лист» — значение справа от надписи в строке Y≈17
-CELL_SHEET_NAME_F4 = (-120.0, -50.0, 18.0, 36.0)  # графа 4 «Наименование изделия» (над строкой листа)
+CELL_SHEET_NAME_F4 = (-120.0, -50.0, 18.0, 36.0)  # графа 5 «Наименование изделия» (над строкой листа)
+CELL_DOC_CODE_F4 = (-120.0, 0.0, 38.0, 56.0)       # графа 1 «Обозначение документа (шифр)»
 
 # Стандартные служебные заголовки граф штампа (не могут быть наименованием листа)
 STAMP_HEADER_LABELS = {
@@ -33,6 +37,7 @@ STAMP_HEADER_LABELS = {
 
 # Графы формы 6 (185×15, последующие листы):
 CELL_SHEET_NUM_F6 = (-35.0, -20.0, 0.0, 15.0)     # графа 7 «Лист»
+CELL_DOC_CODE_F6 = (-185.0, -10.0, 0.0, 15.0)     # графа 1 «Обозначение документа (шифр)»
 
 STAMP_ZONE = (-185.0, 0.0, 0.0, 60.0)             # вся основная надпись
 
@@ -196,8 +201,42 @@ def analyze(polys: List[dict], texts: List[Tuple[float, float, str]]) -> List[di
                        "anchor": anchor, "anchor_from_inner": m["kind"] == "inner", "ref": it["p"]["ref"]})
 
     for f in frames:
-        f["sheet_number"], f["sheet_name"], f["texts"] = _read_stamp(f["anchor"], f["scale"], texts)
+        (
+            f["sheet_number"],
+            f["sheet_name"],
+            f["doc_code"],
+            f["object_name"],
+            f["building_name"],
+            f["texts"],
+        ) = _read_stamp(f["anchor"], f["scale"], texts)
+
+    # Сортировка: титульный лист всегда первым, затем по номеру листа
+    frames.sort(key=lambda f: (
+        0 if (f["sheet_name"] or "").strip().lower() == "титульный лист" else 1,
+        natural_sheet_sort_key(f["sheet_number"])
+    ))
     return frames
+
+
+def _is_title_page(local: List[Tuple[float, float, str]]) -> bool:
+    """
+    Проверяет, является ли лист титульным (без штампа).
+    На титульном листе нет графы «Лист», нет таблицы изменений/подписей в штампе.
+    """
+    # Тексты строго внутри зоны штампа (Y >= 0)
+    in_stamp = [t for t in local if t[1] >= 0]
+    if not in_stamp:
+        return True
+
+    # Если есть графа «Лист» или «Листов» — это точно не титульный лист
+    if any(t[2].strip().lower() in ("лист", "листов") for t in in_stamp):
+        return False
+
+    # Если есть заголовки штампа (таблица изменений, разработчики, стадия)
+    if any(t[2].strip().lower() in STAMP_HEADER_LABELS for t in in_stamp):
+        return False
+
+    return True
 
 
 def _detect_stamp_form(local: List[Tuple[float, float, str]]) -> int:
@@ -225,7 +264,7 @@ def _detect_stamp_form(local: List[Tuple[float, float, str]]) -> int:
 
 
 def _read_stamp(anchor, s, texts):
-    """Номер и наименование листа по графам основной надписи."""
+    """Номер и наименование листа, шифр, объект, здание по графам основной надписи."""
     ax, ay = anchor
     local = []  # (dx_мм, dy_мм, текст) от правого нижнего угла внутренней рамки
     for tx, ty, val in texts:
@@ -236,22 +275,45 @@ def _read_stamp(anchor, s, texts):
     def in_cell(cell):
         return [t for t in local if cell[0] <= t[0] <= cell[1] and cell[2] <= t[1] <= cell[3]]
 
+    # Титульный лист (без штампа): без номера, наименование «Титульный лист»
+    if _is_title_page(local):
+        return "", "Титульный лист", "", "", "", [t[2] for t in local]
+
     form = _detect_stamp_form(local)
+    doc_code = ""
+    object_name = ""
+    building_name = ""
+
     if form == 4:
         cell_num = CELL_SHEET_NUM_F4
         cell_name = CELL_SHEET_NAME_F4
+        # Графа 1 (шифр)
+        code_cells = [t for t in in_cell(CELL_DOC_CODE_F4) if t[2].strip().lower() not in STAMP_HEADER_LABELS]
+        doc_code = " ".join(t[2].strip() for t in sorted(code_cells, key=lambda t: -t[1]))
     elif form == 6:
         cell_num = CELL_SHEET_NUM_F6
         cell_name = None
-    else:
+        # Графа 1 (шифр)
+        code_cells = [t for t in in_cell(CELL_DOC_CODE_F6) if t[2].strip().lower() not in STAMP_HEADER_LABELS]
+        doc_code = " ".join(t[2].strip() for t in sorted(code_cells, key=lambda t: -t[1]))
+    else:  # form 3
         cell_num = CELL_SHEET_NUM_F3
         cell_name = CELL_SHEET_NAME_F3
+        # Графа 1: обозначение документа (шифр)
+        code_cells = [t for t in in_cell(CELL_DOC_CODE_F3) if t[2].strip().lower() not in STAMP_HEADER_LABELS]
+        doc_code = " ".join(t[2].strip() for t in sorted(code_cells, key=lambda t: -t[1]))
+        # Графа 2: наименование объекта строительства
+        obj_cells = [t for t in in_cell(CELL_OBJECT_NAME_F3) if t[2].strip().lower() not in STAMP_HEADER_LABELS]
+        object_name = " ".join(t[2].strip() for t in sorted(obj_cells, key=lambda t: -t[1]))
+        # Графа 3: наименование здания (сооружения)
+        bld_cells = [t for t in in_cell(CELL_BUILDING_NAME_F3) if t[2].strip().lower() not in STAMP_HEADER_LABELS]
+        building_name = " ".join(t[2].strip() for t in sorted(bld_cells, key=lambda t: -t[1]))
 
     # номер листа: графа «Лист» соответствующей формы, иначе — рядом с надписью «Лист»
     cell = [t for t in in_cell(cell_num) if t[2].strip().lower() not in ("лист", "листов")]
     number = max(cell, key=lambda t: t[1])[2] if cell else _number_near_label(local)
 
-    # наименование листа: графа 4, строки сверху вниз (исключая служебные заголовки граф)
+    # наименование листа: графа 4 / 5, строки сверху вниз (исключая служебные заголовки граф)
     if cell_name:
         name_cells = [t for t in in_cell(cell_name) if t[2].strip().lower() not in STAMP_HEADER_LABELS]
         name = " ".join(t[2].strip() for t in sorted(name_cells, key=lambda t: -t[1]))
@@ -264,7 +326,7 @@ def _read_stamp(anchor, s, texts):
     else:
         final_name = name or "Unknown"
 
-    return (number or "Unknown"), final_name, [t[2] for t in local]
+    return (number or "Unknown"), final_name, doc_code, object_name, building_name, [t[2] for t in local]
 
 
 def _number_near_label(local):
@@ -383,7 +445,10 @@ class PolylineParser(BaseParser):
                     max_point=(x2, y2, 0.0),
                     source_type="Polyline",
                     paper_format=fmt,
-                    handle=getattr(poly, 'Handle', '')
+                    handle=getattr(poly, 'Handle', ''),
+                    doc_code=f.get("doc_code", ""),
+                    object_name=f.get("object_name", ""),
+                    building_name=f.get("building_name", "")
                 )
                 frame._debug_texts = f["texts"]
                 frames.append(frame)
