@@ -358,6 +358,38 @@ def build_theme_qss(theme_id: str) -> str:
             color: {theme['text_muted']};
             font-size: 12px;
         }}
+        QMenu {{
+            background-color: {theme['popup_bg']};
+            color: {theme['text_primary']};
+            border: 1px solid {theme['border']};
+            border-radius: 6px;
+            padding: 4px;
+        }}
+        QMenu::item {{
+            background-color: transparent;
+            color: {theme['text_primary']};
+            padding: 6px 24px 6px 20px;
+            border-radius: 4px;
+            font-size: 13px;
+        }}
+        QMenu::item:selected {{
+            background-color: {theme['popup_item_selected_bg']};
+            color: {theme['table_item_selected_text']};
+        }}
+        QMenu::item:disabled {{
+            color: {theme['text_muted']};
+            background-color: transparent;
+        }}
+        QMenu::separator {{
+            height: 1px;
+            background-color: {theme['border']};
+            margin: 4px 6px;
+        }}
+        QMenu::indicator {{
+            width: 14px;
+            height: 14px;
+            left: 5px;
+        }}
     """
 
 

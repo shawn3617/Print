@@ -242,6 +242,75 @@ class TestBatchUI(unittest.TestCase):
         self.assertIn("1</b>", left_text)
         self.assertIn("Фильтр активен", self.win.lbl_status_right.text())
 
+    def test_column_visibility_toggle_and_persistence(self):
+        # По умолчанию колонки не скрыты
+        self.assertFalse(self.win.table.isColumnHidden(4))
+        self.assertFalse(self.win.table.isColumnHidden(5))
+
+        # Скрываем колонку 4 ("Объект строительства")
+        self.win.toggle_column_visibility(4, False)
+        self.assertTrue(self.win.table.isColumnHidden(4))
+        self.mock_config.set.assert_called_with("hidden_columns", [4])
+        self.mock_config.save.assert_called()
+
+        # Скрываем колонку 5 ("Здание / сооружение")
+        self.win.toggle_column_visibility(5, False)
+        self.assertTrue(self.win.table.isColumnHidden(5))
+        self.mock_config.set.assert_called_with("hidden_columns", [4, 5])
+
+        # Отображаем все колонки
+        self.win.show_all_columns()
+        self.assertFalse(self.win.table.isColumnHidden(4))
+        self.assertFalse(self.win.table.isColumnHidden(5))
+        self.mock_config.set.assert_called_with("hidden_columns", [])
+
+        # Сброс ширины колонок
+        self.win.reset_column_widths()
+        header = self.win.table.horizontalHeader()
+        self.assertEqual(header.sectionSize(0), 65)
+        self.assertEqual(header.sectionSize(1), 60)
+        self.assertEqual(header.sectionSize(2), 180)
+
+    def test_context_menu_actions(self):
+        from PySide6.QtGui import QGuiApplication
+        self.win.frames = [
+            Frame(1, "1", "Лист 1", (0,0,0), (10,10,0), "Model", "A4", dwg_name="file1.dwg", doc_code="2024-АР-1"),
+            Frame(2, "2", "Лист 2", (0,0,0), (10,10,0), "Model", "A3", dwg_name="file1.dwg", doc_code="2024-АР-1"),
+            Frame(3, "3", "Лист 3", (0,0,0), (10,10,0), "Model", "A3", dwg_name="file2.dwg", doc_code="2024-КЖ-1"),
+        ]
+        self.win.table.setRowCount(0)
+        for f in self.win.frames:
+            self.win.add_table_row(
+                True, f.sheet_number, f.sheet_name, f.paper_format, f.source_type,
+                dwg_name=f.dwg_name, doc_code=f.doc_code
+            )
+
+        # 1. Печатать только этот лист (строка 1)
+        self.win.print_only_this_row(1)
+        self.assertFalse(self.win.is_row_checked(0))
+        self.assertTrue(self.win.is_row_checked(1))
+        self.assertFalse(self.win.is_row_checked(2))
+
+        # 2. Инвертировать выбор
+        self.win.invert_selection()
+        self.assertTrue(self.win.is_row_checked(0))
+        self.assertFalse(self.win.is_row_checked(1))
+        self.assertTrue(self.win.is_row_checked(2))
+
+        # 3. Печатать листы чертежа file2.dwg
+        self.win.print_same_dwg_rows("file2.dwg")
+        self.assertFalse(self.win.is_row_checked(0))
+        self.assertFalse(self.win.is_row_checked(1))
+        self.assertTrue(self.win.is_row_checked(2))
+
+        # 4. Копировать строку в буфер обмена
+        self.win.copy_full_row(0)
+        clipboard_text = QGuiApplication.clipboard().text()
+        self.assertIn("1", clipboard_text)
+        self.assertIn("2024-АР-1", clipboard_text)
+        self.assertIn("Лист 1", clipboard_text)
+        self.assertIn("file1.dwg", clipboard_text)
+
 
 if __name__ == "__main__":
     unittest.main()

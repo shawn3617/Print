@@ -11,10 +11,10 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QPushButton, QComboBox,
     QLabel, QHeaderView, QCheckBox, QGroupBox, QFormLayout,
     QMessageBox, QFileDialog, QAbstractItemView, QDialog, QProgressBar,
-    QLineEdit, QSizePolicy, QListView, QFrame
+    QLineEdit, QSizePolicy, QListView, QFrame, QMenu
 )
 from PySide6.QtCore import Qt, Signal, QMimeData
-from PySide6.QtGui import QDrag
+from PySide6.QtGui import QDrag, QAction, QGuiApplication
 
 from core.autocad_connector import AutoCADConnector
 from core.scanner import DocumentScanner
@@ -341,12 +341,16 @@ class PrintManagerUI(QMainWindow):
             header.resizeSection(col_idx, width)
 
         header.sectionResized.connect(self.on_column_resized)
+        header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self.show_header_context_menu)
 
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(True)
-        self.table.setToolTip("Листы можно перетаскивать мышкой или перемещать кнопками «Вверх» / «Вниз» (Ctrl+↑ / Ctrl+↓).\nМожно перетаскивать файлы DWG из проводника прямо в окно программы.")
+        self.table.setToolTip("Листы можно перетаскивать мышкой или перемещать кнопками «Вверх» / «Вниз» (Ctrl+↑ / Ctrl+↓).\nМожно перетаскивать файлы DWG из проводника прямо в окно программы.\nПравый клик по строке или шапке открывает контекстное меню.")
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.show_table_context_menu)
         self.table.row_moved.connect(self.on_row_drag_moved)
         self.table.key_move_requested.connect(self.on_key_move_requested)
         self.table.currentCellChanged.connect(self.on_table_cell_changed)
@@ -531,6 +535,13 @@ class PrintManagerUI(QMainWindow):
             if idx_source >= 0:
                 self.combo_source.setCurrentIndex(idx_source)
 
+        # Восстановление скрытых колонок
+        hidden_cols = cfg.get("hidden_columns", [])
+        if isinstance(hidden_cols, list):
+            for c_idx in hidden_cols:
+                if isinstance(c_idx, int) and 0 < c_idx < self.table.columnCount():
+                    self.table.setColumnHidden(c_idx, True)
+
     def on_theme_changed(self, index: int):
         if getattr(self, "_is_loading_config", False):
             return
@@ -578,6 +589,7 @@ class PrintManagerUI(QMainWindow):
         mode_text = self.combo_mode.currentText()
         source_text = self.combo_source.currentText()
         theme_val = self.combo_theme.currentData() if hasattr(self, "combo_theme") else getattr(self, "current_theme", "dark_catppuccin")
+        hidden_cols = [c for c in range(self.table.columnCount()) if self.table.isColumnHidden(c)]
         
         current_cfg = self.config_manager.load()
         if not isinstance(current_cfg, dict):
@@ -591,6 +603,7 @@ class PrintManagerUI(QMainWindow):
             "sync_autocad": self.chk_sync_acad.isChecked(),
             "source_mode": source_text if source_text else current_cfg.get("source_mode", "Модель (Model Space)"),
             "theme": theme_val if theme_val else current_cfg.get("theme", "dark_catppuccin"),
+            "hidden_columns": hidden_cols,
         }
         self.config_manager.save(settings)
         
@@ -1377,13 +1390,224 @@ class PrintManagerUI(QMainWindow):
         self.apply_filter()
 
     def select_all_rows(self, checked: bool = True):
-        for i in range(self.table.rowCount()):
-            if not self.table.isRowHidden(i):
+        self._is_updating_table = True
+        try:
+            for i in range(self.table.rowCount()):
+                if not self.table.isRowHidden(i):
+                    chk_widget = self.table.cellWidget(i, 0)
+                    if chk_widget:
+                        chk = chk_widget.layout().itemAt(0).widget()
+                        chk.setChecked(checked)
+        finally:
+            self._is_updating_table = False
+        self.update_print_counter()
+
+    def invert_selection(self):
+        """Инвертирует выбор (галочки) всех видимых листов."""
+        self._is_updating_table = True
+        try:
+            for i in range(self.table.rowCount()):
+                if not self.table.isRowHidden(i):
+                    chk_widget = self.table.cellWidget(i, 0)
+                    if chk_widget:
+                        chk = chk_widget.layout().itemAt(0).widget()
+                        chk.setChecked(not chk.isChecked())
+        finally:
+            self._is_updating_table = False
+        self.update_print_counter()
+
+    def print_only_this_row(self, target_row: int):
+        """Снимает выбор со всех листов и оставляет отмеченным только выбранный лист."""
+        self._is_updating_table = True
+        try:
+            for i in range(self.table.rowCount()):
                 chk_widget = self.table.cellWidget(i, 0)
                 if chk_widget:
                     chk = chk_widget.layout().itemAt(0).widget()
-                    chk.setChecked(checked)
+                    chk.setChecked(i == target_row)
+        finally:
+            self._is_updating_table = False
         self.update_print_counter()
+
+    def print_same_dwg_rows(self, target_dwg: str):
+        """Отмечает листы только указанного чертежа DWG, снимая выбор с остальных."""
+        if not target_dwg:
+            return
+        self._is_updating_table = True
+        try:
+            for i in range(self.table.rowCount()):
+                dwg_item = self.table.item(i, 7)
+                dwg = dwg_item.text().strip() if dwg_item else ""
+                if not dwg and i < len(self.frames):
+                    dwg = self.frames[i].dwg_name or ""
+                chk_widget = self.table.cellWidget(i, 0)
+                if chk_widget:
+                    chk = chk_widget.layout().itemAt(0).widget()
+                    chk.setChecked(dwg.lower() == target_dwg.lower())
+        finally:
+            self._is_updating_table = False
+        self.update_print_counter()
+
+    def copy_full_row(self, row: int):
+        """Копирует данные строки таблицы с табуляцией для вставки в Excel."""
+        cols_text = []
+        for c in range(1, self.table.columnCount()):
+            item = self.table.item(row, c)
+            cols_text.append(item.text().strip() if item else "")
+        QGuiApplication.clipboard().setText("\t".join(cols_text))
+
+    def show_table_context_menu(self, pos):
+        """Контекстное меню по правому клику мыши на таблицу листов."""
+        row = self.table.rowAt(pos.y())
+        menu = QMenu(self)
+
+        if row >= 0:
+            self.table.selectRow(row)
+
+            act_show = QAction("Показать в AutoCAD", self)
+            act_show.triggered.connect(self.show_current_frame_in_autocad)
+            menu.addAction(act_show)
+
+            menu.addSeparator()
+
+            act_only_this = QAction("Печатать только этот лист", self)
+            act_only_this.triggered.connect(lambda: self.print_only_this_row(row))
+            menu.addAction(act_only_this)
+
+            dwg_item = self.table.item(row, 7)
+            dwg_name = dwg_item.text().strip() if dwg_item else ""
+            if not dwg_name and row < len(self.frames):
+                dwg_name = self.frames[row].dwg_name or ""
+            if dwg_name:
+                act_only_dwg = QAction(f"Печатать только листы «{dwg_name}»", self)
+                act_only_dwg.triggered.connect(lambda _, d=dwg_name: self.print_same_dwg_rows(d))
+                menu.addAction(act_only_dwg)
+
+            menu.addSeparator()
+
+        act_select_all = QAction("Выбрать все", self)
+        act_select_all.triggered.connect(lambda: self.select_all_rows(True))
+        menu.addAction(act_select_all)
+
+        act_deselect_all = QAction("Снять все", self)
+        act_deselect_all.triggered.connect(lambda: self.select_all_rows(False))
+        menu.addAction(act_deselect_all)
+
+        act_invert = QAction("Инвертировать выбор", self)
+        act_invert.triggered.connect(self.invert_selection)
+        menu.addAction(act_invert)
+
+        if row >= 0:
+            menu.addSeparator()
+            copy_menu = menu.addMenu("Копировать")
+
+            name_item = self.table.item(row, 3)
+            name_text = name_item.text().strip() if name_item else ""
+            act_copy_name = QAction("Наименование листа", self)
+            act_copy_name.triggered.connect(lambda _, t=name_text: QGuiApplication.clipboard().setText(t))
+            copy_menu.addAction(act_copy_name)
+
+            code_item = self.table.item(row, 2)
+            code_text = code_item.text().strip() if code_item else ""
+            act_copy_code = QAction("Обозначение документа (шифр)", self)
+            act_copy_code.triggered.connect(lambda _, t=code_text: QGuiApplication.clipboard().setText(t))
+            copy_menu.addAction(act_copy_code)
+
+            num_item = self.table.item(row, 1)
+            num_text = num_item.text().strip() if num_item else ""
+            act_copy_num = QAction("Номер листа", self)
+            act_copy_num.triggered.connect(lambda _, t=num_text: QGuiApplication.clipboard().setText(t))
+            copy_menu.addAction(act_copy_num)
+
+            copy_menu.addSeparator()
+
+            act_copy_row = QAction("Всю строку таблицы (для Excel)", self)
+            act_copy_row.triggered.connect(lambda _, r=row: self.copy_full_row(r))
+            copy_menu.addAction(act_copy_row)
+
+            if not self.is_filter_active():
+                menu.addSeparator()
+                act_up = QAction("▲ Вверх (Ctrl+↑)", self)
+                act_up.setEnabled(row > 0)
+                act_up.triggered.connect(self.move_row_up)
+                menu.addAction(act_up)
+
+                act_down = QAction("▼ Вниз (Ctrl+↓)", self)
+                act_down.setEnabled(row < self.table.rowCount() - 1)
+                act_down.triggered.connect(self.move_row_down)
+                menu.addAction(act_down)
+
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def show_header_context_menu(self, pos):
+        """Контекстное меню по правому клику мыши на шапку таблицы (настройка видимости колонок)."""
+        menu = QMenu(self)
+
+        lbl_title = QAction("Видимость колонок:", self)
+        lbl_title.setEnabled(False)
+        menu.addAction(lbl_title)
+        menu.addSeparator()
+
+        header_labels = [
+            "Печать",
+            "Лист",
+            "Обозначение документа",
+            "Название листа",
+            "Объект строительства",
+            "Здание / сооружение",
+            "Формат",
+            "Чертеж",
+            "Источник"
+        ]
+
+        for col_idx in range(self.table.columnCount()):
+            label = header_labels[col_idx] if col_idx < len(header_labels) else f"Колонка {col_idx}"
+            act = QAction(label, self)
+            act.setCheckable(True)
+            act.setChecked(not self.table.isColumnHidden(col_idx))
+
+            if col_idx == 0:
+                act.setEnabled(False)
+            else:
+                act.toggled.connect(lambda checked, idx=col_idx: self.toggle_column_visibility(idx, checked))
+
+            menu.addAction(act)
+
+        menu.addSeparator()
+
+        act_show_all = QAction("Показать все колонки", self)
+        act_show_all.triggered.connect(self.show_all_columns)
+        menu.addAction(act_show_all)
+
+        act_reset_widths = QAction("Сбросить ширину колонок", self)
+        act_reset_widths.triggered.connect(self.reset_column_widths)
+        menu.addAction(act_reset_widths)
+
+        header = self.table.horizontalHeader()
+        menu.exec(header.mapToGlobal(pos))
+
+    def toggle_column_visibility(self, col_idx: int, visible: bool):
+        """Переключает видимость колонки и сохраняет настройки в config.json."""
+        self.table.setColumnHidden(col_idx, not visible)
+        hidden_cols = [c for c in range(self.table.columnCount()) if self.table.isColumnHidden(c)]
+        self.config_manager.set("hidden_columns", hidden_cols)
+        self.config_manager.save()
+
+    def show_all_columns(self):
+        """Отображает все скрытые колонки таблицы."""
+        for c in range(self.table.columnCount()):
+            self.table.setColumnHidden(c, False)
+        self.config_manager.set("hidden_columns", [])
+        self.config_manager.save()
+
+    def reset_column_widths(self):
+        """Сбрасывает ширину колонок к рекомендуемым значениям по умолчанию."""
+        default_widths = [65, 60, 180, 260, 220, 200, 75, 140, 90]
+        header = self.table.horizontalHeader()
+        for col_idx, width in enumerate(default_widths):
+            header.resizeSection(col_idx, width)
+        self.config_manager.set("table_column_widths", default_widths)
+        self.config_manager.save()
 
     def sort_by_sheet_number(self):
         if not self.frames:
