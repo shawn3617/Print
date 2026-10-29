@@ -185,6 +185,63 @@ class TestBatchUI(unittest.TestCase):
         self.assertEqual(win2.current_theme, "autocad_dark")
         self.assertEqual(win2.combo_theme.currentData(), "autocad_dark")
 
+    def test_status_bar_summary(self):
+        self.win.clear_frames()
+        self.assertIn("Листов в очереди: <b>0</b>", self.win.lbl_status_left.text())
+        self.assertIn("Добавьте чертежи", self.win.lbl_status_right.text())
+
+        # Добавляем листы разных форматов и чертежей
+        self.win.frames = [
+            Frame(1, "1", "Лист 1", (0,0,0), (10,10,0), "Model", "A4", dwg_name="file1.dwg"),
+            Frame(2, "2", "Лист 2", (0,0,0), (10,10,0), "Model", "A3", dwg_name="file1.dwg"),
+            Frame(3, "3", "Лист 3", (0,0,0), (10,10,0), "Model", "A3", dwg_name="file2.dwg"),
+            Frame(4, "4", "Лист 4", (0,0,0), (10,10,0), "Model", "A2", dwg_name="file2.dwg"),
+        ]
+        self.win.table.setRowCount(0)
+        for f in self.win.frames:
+            self.win.add_table_row(True, f.sheet_number, f.sheet_name, f.paper_format, f.source_type, dwg_name=f.dwg_name)
+
+        # Проверяем сводку в Status Bar
+        left_text = self.win.lbl_status_left.text()
+        self.assertIn("Всего листов: <b>4</b>", left_text)
+        self.assertIn("К печати: <b", left_text)
+        self.assertIn("4</b>", left_text)
+        # Форматы: A4x1, A3x2, A2x1
+        self.assertIn("A4x1", left_text)
+        self.assertIn("A3x2", left_text)
+        self.assertIn("A2x1", left_text)
+        # Чертежей: 2
+        self.assertIn("Чертежей: <b>2</b>", left_text)
+
+    def test_status_bar_filter_and_uncheck(self):
+        self.win.frames = [
+            Frame(1, "1", "План", (0,0,0), (10,10,0), "Model", "A3", dwg_name="file1.dwg"),
+            Frame(2, "2", "Схема", (0,0,0), (10,10,0), "Model", "A4", dwg_name="file1.dwg"),
+        ]
+        self.win.table.setRowCount(0)
+        for f in self.win.frames:
+            self.win.add_table_row(True, f.sheet_number, f.sheet_name, f.paper_format, f.source_type, dwg_name=f.dwg_name)
+
+        # Снимаем галочки
+        self.win.select_all_rows(False)
+        left_text = self.win.lbl_status_left.text()
+        self.assertIn("Всего листов: <b>2</b>", left_text)
+        self.assertIn("К печати: <b", left_text)
+        self.assertIn("0</b>", left_text)
+        self.assertIn("Отметьте листы галочками", self.win.lbl_status_right.text())
+
+        # Выбираем обратно
+        self.win.select_all_rows(True)
+        # Фильтруем по слову "План"
+        self.win.txt_search.setText("План")
+        self.assertTrue(self.win.is_filter_active())
+        left_text = self.win.lbl_status_left.text()
+        self.assertIn("Всего листов: <b>2</b>", left_text)
+        self.assertIn("В фильтре: <b>1</b>", left_text)
+        self.assertIn("К печати: <b", left_text)
+        self.assertIn("1</b>", left_text)
+        self.assertIn("Фильтр активен", self.win.lbl_status_right.text())
+
 
 if __name__ == "__main__":
     unittest.main()

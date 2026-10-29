@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QPushButton, QComboBox,
     QLabel, QHeaderView, QCheckBox, QGroupBox, QFormLayout,
     QMessageBox, QFileDialog, QAbstractItemView, QDialog, QProgressBar,
-    QLineEdit, QSizePolicy, QListView
+    QLineEdit, QSizePolicy, QListView, QFrame
 )
 from PySide6.QtCore import Qt, Signal, QMimeData
 from PySide6.QtGui import QDrag
@@ -353,6 +353,25 @@ class PrintManagerUI(QMainWindow):
         self.table.cellDoubleClicked.connect(self.on_table_cell_double_clicked)
         left_layout.addWidget(self.table)
 
+        # Информационная строка со сводкой по форматам листов (Status Bar)
+        self.status_bar_frame = QFrame()
+        self.status_bar_frame.setObjectName("status_bar_container")
+        status_bar_layout = QHBoxLayout(self.status_bar_frame)
+        status_bar_layout.setContentsMargins(12, 6, 12, 6)
+        status_bar_layout.setSpacing(10)
+
+        self.lbl_status_left = QLabel("Листов в очереди: <b>0</b>")
+        self.lbl_status_left.setObjectName("status_bar_left")
+        status_bar_layout.addWidget(self.lbl_status_left)
+
+        status_bar_layout.addStretch()
+
+        self.lbl_status_right = QLabel("Добавьте чертежи .dwg или нажмите «Найти рамки»")
+        self.lbl_status_right.setObjectName("status_bar_right")
+        status_bar_layout.addWidget(self.lbl_status_right)
+
+        left_layout.addWidget(self.status_bar_frame)
+
 
         # Панель управления порядком и выбором листов (адаптивная: 1 ряд при широком окне, 2 при узком)
         self.table_tools_container = QWidget()
@@ -534,6 +553,8 @@ class PrintManagerUI(QMainWindow):
                 self.lbl_document.setStyleSheet(f"color: {err_col}; font-weight: bold;")
             else:
                 self.lbl_document.setStyleSheet(f"color: {ok_col}; font-weight: bold;")
+
+        self.update_print_counter()
 
     def on_source_mode_changed(self, text: str):
         if "Layout" in text or "Листы" in text:
@@ -999,6 +1020,9 @@ class PrintManagerUI(QMainWindow):
         self.table.setItem(row, 7, item_dwg)
         self.table.setItem(row, 8, item_src)
         
+        if not getattr(self, "_is_updating_table", False):
+            self.update_print_counter()
+        
     def is_filter_active(self) -> bool:
         """Возвращает True, если активен поиск по тексту или выбран конкретный формат."""
         if not hasattr(self, 'txt_search') or not hasattr(self, 'combo_filter_format'):
@@ -1138,19 +1162,95 @@ class PrintManagerUI(QMainWindow):
     def update_print_counter(self):
         count = 0
         total_visible = 0
-        for i in range(self.table.rowCount()):
+        total_sheets = self.table.rowCount()
+        selected_formats = {}
+        selected_dwgs = set()
+
+        for i in range(total_sheets):
             if not self.table.isRowHidden(i):
                 total_visible += 1
-                chk_widget = self.table.cellWidget(i, 0)
-                if chk_widget:
-                    chk = chk_widget.layout().itemAt(0).widget()
-                    if chk.isChecked():
-                        count += 1
+                if self.is_row_checked(i):
+                    count += 1
+                    # Формат листа (колонка 6)
+                    fmt = ""
+                    fmt_item = self.table.item(i, 6)
+                    if fmt_item and fmt_item.text().strip():
+                        fmt = fmt_item.text().strip()
+                    elif i < len(self.frames) and self.frames[i].paper_format:
+                        fmt = self.frames[i].paper_format.strip()
+                    if not fmt:
+                        fmt = "—"
+                    selected_formats[fmt] = selected_formats.get(fmt, 0) + 1
+
+                    # Имя чертежа (колонка 7)
+                    dwg = ""
+                    dwg_item = self.table.item(i, 7)
+                    if dwg_item and dwg_item.text().strip():
+                        dwg = dwg_item.text().strip()
+                    elif i < len(self.frames) and self.frames[i].dwg_name:
+                        dwg = self.frames[i].dwg_name.strip()
+                    if dwg:
+                        selected_dwgs.add(dwg)
+
         if self.is_filter_active():
             self.btn_print.setText(f"ПЕЧАТЬ ({count} из {total_visible} листов)")
         else:
             self.btn_print.setText(f"ПЕЧАТЬ ({count} листов)")
         self.btn_print.setEnabled(count > 0)
+
+        self.update_status_bar(total_sheets, total_visible, count, selected_formats, selected_dwgs)
+
+    def update_status_bar(self, total_sheets: int, total_visible: int, count: int, selected_formats: dict, selected_dwgs: set):
+        if not hasattr(self, "lbl_status_left") or not hasattr(self, "lbl_status_right"):
+            return
+
+        theme_id = getattr(self, "current_theme", "dark_catppuccin")
+        ok_col, err_col = get_theme_status_colors(theme_id)
+        theme_meta = THEMES.get(theme_id, THEMES["dark_catppuccin"])
+        accent_col = theme_meta.get("accent_color", "#89b4fa")
+        text_muted = theme_meta.get("text_muted", "#a6adc8")
+
+        if total_sheets == 0:
+            self.lbl_status_left.setText("<span>Листов в очереди: <b>0</b></span>")
+            self.lbl_status_right.setText("Добавьте чертежи .dwg или нажмите «Найти рамки»")
+            return
+
+        def format_sort_key(fmt: str):
+            f = fmt.strip().upper().replace("А", "A")
+            import re
+            m = re.match(r"A(\d)(?:[XХ](\d+))?", f)
+            if m:
+                base = int(m.group(1))
+                mult = int(m.group(2)) if m.group(2) else 1
+                return (0, -base, mult)
+            return (1, f)
+
+        sorted_fmt_keys = sorted(selected_formats.keys(), key=format_sort_key)
+        fmt_parts = [f"{k}x{selected_formats[k]}" for k in sorted_fmt_keys]
+        fmt_str = f" <span style='color: {accent_col};'>({', '.join(fmt_parts)})</span>" if fmt_parts else ""
+
+        parts = []
+        parts.append(f"Всего листов: <b>{total_sheets}</b>")
+        if self.is_filter_active():
+            parts.append(f"В фильтре: <b>{total_visible}</b>")
+
+        if count > 0:
+            parts.append(f"К печати: <b style='color: {ok_col};'>{count}</b>{fmt_str}")
+        else:
+            parts.append(f"К печати: <b style='color: {text_muted};'>0</b>")
+
+        if selected_dwgs:
+            parts.append(f"Чертежей: <b>{len(selected_dwgs)}</b>")
+
+        sep = f" &nbsp;<span style='color: {text_muted};'>|</span>&nbsp; "
+        self.lbl_status_left.setText(sep.join(parts))
+
+        if self.is_filter_active():
+            self.lbl_status_right.setText("Фильтр активен")
+        elif count == 0:
+            self.lbl_status_right.setText("Отметьте листы галочками для печати")
+        else:
+            self.lbl_status_right.setText("Двойной клик — показать в AutoCAD")
 
     def is_row_checked(self, row: int) -> bool:
         chk_widget = self.table.cellWidget(row, 0)

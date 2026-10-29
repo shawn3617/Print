@@ -345,6 +345,19 @@ def build_theme_qss(theme_id: str) -> str:
             background: {theme['progress_chunk']};
             border-radius: 5px;
         }}
+        QFrame#status_bar_container {{
+            background-color: {theme['bg_card']};
+            border: 1px solid {theme['border']};
+            border-radius: 6px;
+        }}
+        QLabel#status_bar_left {{
+            color: {theme['text_primary']};
+            font-size: 13px;
+        }}
+        QLabel#status_bar_right {{
+            color: {theme['text_muted']};
+            font-size: 12px;
+        }}
     """
 
 
