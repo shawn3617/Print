@@ -6,6 +6,8 @@
   "open_after_print": true,
   "sync_autocad": true,
   "source_mode": "Модель (Model Space)",
+  "frame_type": "spds",
+  "custom_block_name": "",
   "table_column_widths": [
     65,
     115,

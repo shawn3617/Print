@@ -76,6 +76,42 @@ class TestBatchScanner(unittest.TestCase):
             # Должен обработаться только 1 файл
             self.assertEqual(len(frames), 1)
 
+    def test_get_parsers_for_mode(self):
+        from parsers.spds_parser import SPDSParser
+        from parsers.block_parser import BlockParser
+        from parsers.polyline_parser import PolylineParser
+        from core.scanner import (
+            FRAME_TYPE_SPDS, FRAME_TYPE_ALL_BLOCKS,
+            FRAME_TYPE_CUSTOM_BLOCK, FRAME_TYPE_POLYLINE, FRAME_TYPE_ALL
+        )
+
+        # 1. SPDS only
+        p_spds = self.scanner.get_parsers_for_mode(FRAME_TYPE_SPDS)
+        self.assertEqual(len(p_spds), 1)
+        self.assertIsInstance(p_spds[0], SPDSParser)
+
+        # 2. All blocks only
+        p_blocks = self.scanner.get_parsers_for_mode(FRAME_TYPE_ALL_BLOCKS)
+        self.assertEqual(len(p_blocks), 1)
+        self.assertIsInstance(p_blocks[0], BlockParser)
+
+        # 3. Custom block
+        p_custom = self.scanner.get_parsers_for_mode(FRAME_TYPE_CUSTOM_BLOCK, "Рамка1, SHT_*")
+        self.assertEqual(len(p_custom), 1)
+        self.assertIsInstance(p_custom[0], BlockParser)
+        self.assertIn("рамка1", p_custom[0].block_names)
+        self.assertIn("*рамка1*", p_custom[0].block_names)
+        self.assertIn("sht_*", p_custom[0].block_names)
+
+        # 4. Polyline only
+        p_poly = self.scanner.get_parsers_for_mode(FRAME_TYPE_POLYLINE)
+        self.assertEqual(len(p_poly), 1)
+        self.assertIsInstance(p_poly[0], PolylineParser)
+
+        # 5. All parsers
+        p_all = self.scanner.get_parsers_for_mode(FRAME_TYPE_ALL)
+        self.assertEqual(len(p_all), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,22 +5,56 @@ from parsers.block_parser import BlockParser
 from parsers.spds_parser import SPDSParser
 from parsers.polyline_parser import PolylineParser
 
+FRAME_TYPE_SPDS = "spds"
+FRAME_TYPE_ALL_BLOCKS = "all_blocks"
+FRAME_TYPE_CUSTOM_BLOCK = "custom_block"
+FRAME_TYPE_POLYLINE = "polyline"
+FRAME_TYPE_ALL = "all"
+
+
 class DocumentScanner:
     """
-    Агрегатор, который запускает все парсеры и собирает рамки со всего чертежа.
+    Агрегатор, который запускает выбранные парсеры и собирает рамки со всего чертежа.
     """
     def __init__(self):
-        # Настраиваем парсеры: быстрый LISP-парсер СПДС первым, затем универсальный парсер блоков
+        # Настраиваем парсеры по умолчанию
         self.parsers = [
             SPDSParser(),
             BlockParser(),
             PolylineParser(target_layer="0000_Формат")
         ]
 
-    def scan_document(self, doc) -> List[Frame]:
+    def get_parsers_for_mode(self, frame_type: str = "all", custom_block_name: str = "") -> list:
+        """Возвращает список парсеров, соответствующих выбранному режиму поиска рамок."""
+        if frame_type == FRAME_TYPE_SPDS:
+            return [SPDSParser()]
+        elif frame_type == FRAME_TYPE_ALL_BLOCKS:
+            return [BlockParser()]
+        elif frame_type == FRAME_TYPE_CUSTOM_BLOCK:
+            if custom_block_name and custom_block_name.strip():
+                raw_names = [n.strip() for n in custom_block_name.replace(";", ",").split(",") if n.strip()]
+                masks = []
+                for n in raw_names:
+                    masks.append(n)
+                    if "*" not in n and "?" not in n:
+                        masks.append(f"*{n}*")
+                return [BlockParser(block_names=masks)]
+            else:
+                return [BlockParser()]
+        elif frame_type == FRAME_TYPE_POLYLINE:
+            return [PolylineParser(target_layer="0000_Формат")]
+        else:  # FRAME_TYPE_ALL или по умолчанию
+            return [
+                SPDSParser(),
+                BlockParser(),
+                PolylineParser(target_layer="0000_Формат")
+            ]
+
+    def scan_document(self, doc, frame_type: str = "all", custom_block_name: str = "") -> List[Frame]:
         import time
         all_frames: List[Frame] = []
-        for parser in self.parsers:
+        active_parsers = self.get_parsers_for_mode(frame_type, custom_block_name)
+        for parser in active_parsers:
             try:
                 t_p0 = time.perf_counter()
                 frames = parser.find_frames(doc)
@@ -156,7 +190,16 @@ class DocumentScanner:
         layout_frames.sort(key=lambda x: x[0])
         return [item[1] for item in layout_frames]
 
-    def scan_files(self, connector, file_paths: List[str], source_mode: str = "Модель", progress_callback=None, is_cancelled=None) -> List[Frame]:
+    def scan_files(
+        self,
+        connector,
+        file_paths: List[str],
+        source_mode: str = "Модель",
+        frame_type: str = "all",
+        custom_block_name: str = "",
+        progress_callback=None,
+        is_cancelled=None
+    ) -> List[Frame]:
         """
         Пакетное сканирование нескольких DWG-файлов.
         Для каждого файла открывает чертеж в AutoCAD (если не открыт),
@@ -206,7 +249,7 @@ class DocumentScanner:
                 if is_layouts:
                     doc_frames = self.scan_layouts(doc)
                 else:
-                    doc_frames = self.scan_document(doc)
+                    doc_frames = self.scan_document(doc, frame_type=frame_type, custom_block_name=custom_block_name)
                     
                 for fr in doc_frames:
                     if not fr.dwg_path:

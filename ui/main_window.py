@@ -504,6 +504,40 @@ class PrintManagerUI(QMainWindow):
         form_layout.addRow("", self.chk_open_after)
 
         right_layout.addWidget(group_printer)
+
+        # Выбор типа рамок для поиска
+        group_frames = QGroupBox("Поиск рамок")
+        frames_form = QVBoxLayout(group_frames)
+        frames_form.setSpacing(10)
+
+        self.combo_frame_type = QComboBox()
+        self.combo_frame_type.setView(QListView())
+        self.combo_frame_type.addItem("Рамки СПДС", "spds")
+        self.combo_frame_type.addItem("Любые блоки", "all_blocks")
+        self.combo_frame_type.addItem("Конкретный блок...", "custom_block")
+        self.combo_frame_type.addItem("Полилинии (0000_Формат)", "polyline")
+        self.combo_frame_type.addItem("Все типы сразу", "all")
+        self.combo_frame_type.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_frame_type.setMinimumContentsLength(8)
+        self.combo_frame_type.currentIndexChanged.connect(self.on_frame_type_changed)
+        frames_form.addWidget(self.combo_frame_type)
+
+        self.edit_block_name = QLineEdit()
+        self.edit_block_name.setPlaceholderText("Имя или маска блока (напр. Рамка1, SHT_*)")
+        self.edit_block_name.setToolTip("Укажите имя или маску блока (можно несколько через запятую)")
+        self.edit_block_name.textChanged.connect(lambda _: self.save_settings())
+        self.edit_block_name.setVisible(False)
+        frames_form.addWidget(self.edit_block_name)
+
+        self.lbl_frame_type_warning = QLabel(
+            "⚠️ Поиск по всем типам рамок (СПДС + блоки + полилинии) занимает больше времени при пакетной обработке."
+        )
+        self.lbl_frame_type_warning.setWordWrap(True)
+        self.lbl_frame_type_warning.setStyleSheet("color: #fab387; font-size: 11px;")
+        self.lbl_frame_type_warning.setVisible(False)
+        frames_form.addWidget(self.lbl_frame_type_warning)
+
+        right_layout.addWidget(group_frames)
         right_layout.addStretch()
         
         self.btn_print = QPushButton("ПЕЧАТЬ (0 листов)")
@@ -552,12 +586,35 @@ class PrintManagerUI(QMainWindow):
             if idx_source >= 0:
                 self.combo_source.setCurrentIndex(idx_source)
 
+        saved_frame_type = cfg.get("frame_type", "spds")
+        if hasattr(self, "combo_frame_type") and isinstance(saved_frame_type, str):
+            idx_ft = self.combo_frame_type.findData(saved_frame_type)
+            if idx_ft >= 0:
+                self.combo_frame_type.blockSignals(True)
+                self.combo_frame_type.setCurrentIndex(idx_ft)
+                self.combo_frame_type.blockSignals(False)
+            self.on_frame_type_changed(self.combo_frame_type.currentIndex())
+
+        saved_custom_block = cfg.get("custom_block_name", "")
+        if hasattr(self, "edit_block_name") and isinstance(saved_custom_block, str):
+            self.edit_block_name.setText(saved_custom_block)
+
         # Восстановление скрытых колонок
         hidden_cols = cfg.get("hidden_columns", [])
         if isinstance(hidden_cols, list):
             for c_idx in hidden_cols:
                 if isinstance(c_idx, int) and 0 < c_idx < self.table.columnCount():
                     self.table.setColumnHidden(c_idx, True)
+
+    def on_frame_type_changed(self, index: int):
+        if not hasattr(self, "combo_frame_type"):
+            return
+        mode = self.combo_frame_type.currentData()
+        if hasattr(self, "edit_block_name"):
+            self.edit_block_name.setVisible(mode == "custom_block")
+        if hasattr(self, "lbl_frame_type_warning"):
+            self.lbl_frame_type_warning.setVisible(mode == "all")
+        self.save_settings()
 
     def on_theme_changed(self, index: int):
         if getattr(self, "_is_loading_config", False):
@@ -606,6 +663,8 @@ class PrintManagerUI(QMainWindow):
         mode_text = self.combo_mode.currentText()
         source_text = self.combo_source.currentText()
         theme_val = self.combo_theme.currentData() if hasattr(self, "combo_theme") else getattr(self, "current_theme", "dark_catppuccin")
+        frame_type_val = self.combo_frame_type.currentData() if hasattr(self, "combo_frame_type") else "spds"
+        custom_block_val = self.edit_block_name.text() if hasattr(self, "edit_block_name") else ""
         hidden_cols = [c for c in range(self.table.columnCount()) if self.table.isColumnHidden(c)]
         
         current_cfg = self.config_manager.load()
@@ -619,6 +678,8 @@ class PrintManagerUI(QMainWindow):
             "open_after_print": self.chk_open_after.isChecked(),
             "sync_autocad": self.chk_sync_acad.isChecked(),
             "source_mode": source_text if source_text else current_cfg.get("source_mode", "Модель (Model Space)"),
+            "frame_type": frame_type_val if frame_type_val else current_cfg.get("frame_type", "spds"),
+            "custom_block_name": custom_block_val,
             "theme": theme_val if theme_val else current_cfg.get("theme", "dark_catppuccin"),
             "hidden_columns": hidden_cols,
         }
@@ -754,10 +815,14 @@ class PrintManagerUI(QMainWindow):
             return progress_dlg.is_cancelled
 
         try:
+            frame_type = self.combo_frame_type.currentData() if hasattr(self, "combo_frame_type") else "spds"
+            custom_block = self.edit_block_name.text() if hasattr(self, "edit_block_name") else ""
             new_frames = self.scanner.scan_files(
                 connector=self.connector,
                 file_paths=file_paths,
                 source_mode=source_mode,
+                frame_type=frame_type,
+                custom_block_name=custom_block,
                 progress_callback=on_scan_progress,
                 is_cancelled=is_cancelled
             )
@@ -949,7 +1014,13 @@ class PrintManagerUI(QMainWindow):
             if is_layouts_mode:
                 self.frames = self.scanner.scan_layouts(self.connector.doc)
             else:
-                self.frames = self.scanner.scan_document(self.connector.doc)
+                frame_type = self.combo_frame_type.currentData() if hasattr(self, "combo_frame_type") else "spds"
+                custom_block = self.edit_block_name.text() if hasattr(self, "edit_block_name") else ""
+                self.frames = self.scanner.scan_document(
+                    self.connector.doc,
+                    frame_type=frame_type,
+                    custom_block_name=custom_block
+                )
             
             # Обновляем таблицу
             self._is_updating_table = True

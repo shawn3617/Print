@@ -311,6 +311,35 @@ class TestBatchUI(unittest.TestCase):
         self.assertIn("Лист 1", clipboard_text)
         self.assertIn("file1.dwg", clipboard_text)
 
+    def test_frame_type_selection_and_ui_state(self):
+        # Проверяем элементы группы "Поиск рамок"
+        self.assertTrue(hasattr(self.win, "combo_frame_type"))
+        self.assertTrue(hasattr(self.win, "edit_block_name"))
+        self.assertTrue(hasattr(self.win, "lbl_frame_type_warning"))
+
+        # Доступно 5 режимов
+        self.assertEqual(self.win.combo_frame_type.count(), 5)
+        codes = [self.win.combo_frame_type.itemData(i) for i in range(5)]
+        self.assertEqual(codes, ["spds", "all_blocks", "custom_block", "polyline", "all"])
+
+        # 1. Режим СПДС: скрыты поле ввода и предупреждение
+        idx_spds = self.win.combo_frame_type.findData("spds")
+        self.win.combo_frame_type.setCurrentIndex(idx_spds)
+        self.assertTrue(self.win.edit_block_name.isHidden())
+        self.assertTrue(self.win.lbl_frame_type_warning.isHidden())
+
+        # 2. Режим "Конкретный блок": поле ввода отображается
+        idx_custom = self.win.combo_frame_type.findData("custom_block")
+        self.win.combo_frame_type.setCurrentIndex(idx_custom)
+        self.assertFalse(self.win.edit_block_name.isHidden())
+        self.assertTrue(self.win.lbl_frame_type_warning.isHidden())
+
+        # 3. Режим "Все типы сразу": предупреждение отображается
+        idx_all = self.win.combo_frame_type.findData("all")
+        self.win.combo_frame_type.setCurrentIndex(idx_all)
+        self.assertTrue(self.win.edit_block_name.isHidden())
+        self.assertFalse(self.win.lbl_frame_type_warning.isHidden())
+
 
 if __name__ == "__main__":
     unittest.main()
