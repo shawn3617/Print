@@ -1,11 +1,56 @@
 import time
+import re
 import fnmatch
 from typing import List, Any
-from core.models import Frame, detect_paper_format
+from core.models import Frame, ALL_FORMATS, detect_paper_format
 from parsers.base_parser import BaseParser
-
-
 from core.resource_utils import get_resource_path
+
+
+DEFAULT_BLOCK_NAMES = [
+    "*SHT*", "*Формат*", "*Format*", "*Рамк*", "*Ramk*",
+    "*Штамп*", "*Stamp*", "*Лист*", "*Sheet*", "*Title*",
+    "*Титул*", "*Обложк*", "*BRU*", "*vcFormat*"
+]
+
+DEFAULT_SHEET_TAGS = [
+    "!НОМЕР", "!ЛИСТ", "!LIST", "!SHEET", "!PAGE",
+    "SHEET", "ЛИСТ", "НОМЕР", "НОМЕР_ЛИСТА", "SH_NUM",
+    "LIST", "PAGE", "ЛИСТ_№", "N_ЛИСТА", "НОМЕРЛИСТА"
+]
+
+DEFAULT_TITLE_TAGS = [
+    "CHERTEZH", "ЧЕРТЕЖ", "TITLE", "НАИМЕНОВАНИЕ", "НАЗВАНИЕ",
+    "НАИМЕНОВАНИЕ_ЛИСТА", "НАИМЕНОВАНИЕЛИСТА", "SHEET_NAME", "DWG_NAME", "ИМЯ_ЛИСТА"
+]
+
+DEFAULT_SHIFR_TAGS = [
+    "!ШИФР", "!DOC_CODE", "!DOCUM", "!CODE",
+    "DOCUM", "SHIFR", "ШИФР", "DOC_CODE", "CODE",
+    "DESIGNATION", "ОБОЗНАЧЕНИЕ", "ОБОЗНАЧЕНИЕ_ДОКУМЕНТА", "DWG_CODE", "ПРОЕКТ"
+]
+
+DEFAULT_OBJECT_TAGS = [
+    "OBJECT", "ОБЪЕКТ", "OBJECT_NAME", "НАИМЕНОВАНИЕ_ОБЪЕКТА",
+    "ОБЪЕКТ_СТРОИТЕЛЬСТВА", "COMPLEXNAME", "ПРЕДПРИЯТИЕ",
+    "НАИМЕНОВАНИЕ2", "НАИМЕНОВАНИЕ_ОБЪЕКТА1", "PROJECT_NAME"
+]
+
+DEFAULT_BUILDING_TAGS = [
+    "BUILD", "BUILDING", "ЗДАНИЕ", "BUILDING_NAME",
+    "НАИМЕНОВАНИЕ_ЗДАНИЯ", "СООРУЖЕНИЕ", "СООРУЖЕНИЕ2",
+    "ПОЗИЦИЯ", "DRAWINGNAME1"
+]
+
+
+def clean_mtext(text: str) -> str:
+    """Удаляет коды форматирования MText AutoCAD (\\W0.8;, \\H1.5;, \\P и т.д.)."""
+    if not text:
+        return ""
+    text = re.sub(r"\\[WwHhCcQqTtAaFfOoPpLlKk][^;]*;", "", text)
+    text = text.replace(r"\P", " ").replace(r"\p", " ")
+    text = text.replace("{", "").replace("}", "")
+    return " ".join(text.split())
 
 
 class BlockParser(BaseParser):
@@ -19,19 +64,20 @@ class BlockParser(BaseParser):
         building_attr_tags: List[str] = None,
     ):
         """
-        :param block_names: Список имен блоков или масок (например, ["SHT_*", "Формат*"])
-        :param sheet_attr_tags: Список тегов атрибутов, в которых хранится номер листа
+        :param block_names: Список имен блоков или масок (по умолчанию охватывает все популярные рамки)
+        :param sheet_attr_tags: Список тегов атрибутов номера листа
         :param title_attr_tags: Список тегов атрибутов названия листа
         :param shifr_attr_tags: Список тегов атрибутов шифра / обозначения (графа 1)
         :param object_attr_tags: Список тегов атрибутов наименования объекта (графа 2)
         :param building_attr_tags: Список тегов атрибутов наименования здания (графа 3)
         """
-        self.block_names = [name.lower() for name in (block_names or ["SHT_*", "Формат*"])]
-        self.sheet_attr_tags = [tag.upper() for tag in (sheet_attr_tags or ["SHEET", "ЛИСТ", "НОМЕР", "НОМЕР_ЛИСТА", "SH_NUM"])]
-        self.title_attr_tags = [tag.upper() for tag in (title_attr_tags or ["TITLE", "НАИМЕНОВАНИЕ", "НАЗВАНИЕ", "НАИМЕНОВАНИЕ_ЛИСТА", "SHEET_NAME"])]
-        self.shifr_attr_tags = [tag.upper() for tag in (shifr_attr_tags or ["SHIFR", "ШИФР", "DOC_CODE", "CODE", "DESIGNATION", "ОБОЗНАЧЕНИЕ", "ОБОЗНАЧЕНИЕ_ДОКУМЕНТА"])]
-        self.object_attr_tags = [tag.upper() for tag in (object_attr_tags or ["OBJECT", "ОБЪЕКТ", "OBJECT_NAME", "НАИМЕНОВАНИЕ_ОБЪЕКТА", "COMPLEXNAME", "ПРЕДПРИЯТИЕ"])]
-        self.building_attr_tags = [tag.upper() for tag in (building_attr_tags or ["BUILDING", "ЗДАНИЕ", "BUILDING_NAME", "НАИМЕНОВАНИЕ_ЗДАНИЯ", "СООРУЖЕНИЕ", "ПОЗИЦИЯ", "DRAWINGNAME1"])]
+        raw_names = block_names or DEFAULT_BLOCK_NAMES
+        self.block_names = [name.lower() for name in raw_names]
+        self.sheet_attr_tags = [tag.upper() for tag in (sheet_attr_tags or DEFAULT_SHEET_TAGS)]
+        self.title_attr_tags = [tag.upper() for tag in (title_attr_tags or DEFAULT_TITLE_TAGS)]
+        self.shifr_attr_tags = [tag.upper() for tag in (shifr_attr_tags or DEFAULT_SHIFR_TAGS)]
+        self.object_attr_tags = [tag.upper() for tag in (object_attr_tags or DEFAULT_OBJECT_TAGS)]
+        self.building_attr_tags = [tag.upper() for tag in (building_attr_tags or DEFAULT_BUILDING_TAGS)]
 
         # Путь к LISP-экстрактору рамок-блоков
         self.lisp_path = get_resource_path("core/lisp/block_export.lsp")
@@ -42,6 +88,53 @@ class BlockParser(BaseParser):
             if t in attrs and attrs[t]:
                 return attrs[t]
         return ""
+
+    @staticmethod
+    def _extract_explicit_format(attrs: dict) -> str:
+        """Извлекает формат ГОСТ напрямую из атрибутов блока (например ФОРМАТ="A2x4" или !ФОРМАТ="A4")."""
+        for tag in ("!ФОРМАТ", "ФОРМАТ", "FORMAT", "!FORMAT", "РАЗМЕР_ЛИСТА", "РАЗМЕРЛИСТА", "РАЗМЕР"):
+            val = attrs.get(tag, "").strip()
+            if val:
+                norm = val.upper().replace("А", "A").replace(" ", "")
+                norm = norm.replace("Х", "x").replace("X", "x")
+                if norm.startswith("FORMAT"):
+                    norm = norm[6:]
+                if norm in ALL_FORMATS:
+                    return norm
+        return ""
+
+    @classmethod
+    def _extract_sheet_name(cls, attrs: dict, tags: List[str]) -> str:
+        """Извлекает наименование листа с поддержкой составных многострочных тегов."""
+        for prefix in ("НАИМЕНОВАНИЕ_ЛИСТА", "НАИМЕНОВАНИЕЛИСТА", "TITLE_", "NAME_"):
+            matching_keys = [k for k in attrs.keys() if k.startswith(prefix) and attrs[k].strip()]
+            if matching_keys:
+                matching_keys.sort()
+                parts = [attrs[k] for k in matching_keys]
+                return clean_mtext(" ".join(parts))
+        return clean_mtext(cls._get_attr_value(attrs, tags) or "Unknown")
+
+    @classmethod
+    def _extract_object_name(cls, attrs: dict, tags: List[str]) -> str:
+        """Извлекает наименование объекта с поддержкой составных тегов."""
+        for prefix in ("НАИМЕНОВАНИЕ_ОБЪЕКТА", "ОБЪЕКТ_"):
+            matching_keys = [k for k in attrs.keys() if k.startswith(prefix) and attrs[k].strip()]
+            if matching_keys:
+                matching_keys.sort()
+                parts = [attrs[k] for k in matching_keys]
+                return clean_mtext(" ".join(parts))
+        return clean_mtext(cls._get_attr_value(attrs, tags))
+
+    @classmethod
+    def _extract_building_name(cls, attrs: dict, tags: List[str]) -> str:
+        """Извлекает наименование здания / сооружения с поддержкой составных тегов."""
+        for prefix in ("НАИМЕНОВАНИЕ_ЗДАНИЯ", "ЗДАНИЕ_"):
+            matching_keys = [k for k in attrs.keys() if k.startswith(prefix) and attrs[k].strip()]
+            if matching_keys:
+                matching_keys.sort()
+                parts = [attrs[k] for k in matching_keys]
+                return clean_mtext(" ".join(parts))
+        return clean_mtext(cls._get_attr_value(attrs, tags))
 
     @staticmethod
     def _check_is_title(sheet_num: str, sheet_name: str, block_name: str) -> tuple:
@@ -73,27 +166,60 @@ class BlockParser(BaseParser):
         return clean_num or "Unknown", clean_name
 
     def _convert_items_to_frames(self, items: list) -> List[Frame]:
-        frames = []
+        # 1. Разделяем блоки на форматы (границы листа) и вложенные штампы
+        formats = []
+        stamps = []
         for item in items:
-            hdl = item.get("handle", "")
-            b_name = item.get("block_name", "")
-            num = item.get("sheet_number", "Unknown")
-            name = item.get("sheet_name", "Unknown")
-            sc = float(item.get("scale", 1.0))
-            min_x = float(item.get("min_x", 0.0))
-            min_y = float(item.get("min_y", 0.0))
-            max_x = float(item.get("max_x", 0.0))
-            max_y = float(item.get("max_y", 0.0))
+            b_name = (item.get("block_name") or "").lower()
+            is_stamp = ("stamp" in b_name or "штамп" in b_name) and not ("format" in b_name or "рамк" in b_name or "sht" in b_name)
+            if is_stamp:
+                stamps.append(item)
+            else:
+                formats.append(item)
+
+        frames = []
+        for fmt_item in formats:
+            hdl = fmt_item.get("handle", "")
+            b_name = fmt_item.get("block_name", "")
+            sc = float(fmt_item.get("scale", 1.0))
+            min_x = float(fmt_item.get("min_x", 0.0))
+            min_y = float(fmt_item.get("min_y", 0.0))
+            max_x = float(fmt_item.get("max_x", 0.0))
+            max_y = float(fmt_item.get("max_y", 0.0))
 
             w = max_x - min_x
             h = max_y - min_y
 
-            fmt = detect_paper_format(w, h, b_name, scale=sc)
+            # 2. Ищем штамп, геометрически попадающий внутрь этой рамки
+            margin = max(100.0, w * 0.02)
+            matched_stamp = None
+            for st in stamps:
+                sx1 = float(st.get("min_x", 0.0))
+                sy1 = float(st.get("min_y", 0.0))
+                sx2 = float(st.get("max_x", 0.0))
+                sy2 = float(st.get("max_y", 0.0))
+                if sx1 >= min_x - margin and sy1 >= min_y - margin and sx2 <= max_x + margin and sy2 <= max_y + margin:
+                    matched_stamp = st
+                    break
 
-            attrs = {k.upper(): str(v).strip() for k, v in item.get("attrs", {}).items()}
-            doc_code = self._get_attr_value(attrs, self.shifr_attr_tags)
-            object_name = self._get_attr_value(attrs, self.object_attr_tags)
-            building_name = self._get_attr_value(attrs, self.building_attr_tags)
+            attrs = {k.upper(): str(v).strip() for k, v in fmt_item.get("attrs", {}).items()}
+            if matched_stamp:
+                stamp_attrs = {k.upper(): str(v).strip() for k, v in matched_stamp.get("attrs", {}).items()}
+                for k, v in stamp_attrs.items():
+                    if v and (k not in attrs or not attrs[k]):
+                        attrs[k] = v
+
+            explicit_fmt = self._extract_explicit_format(attrs)
+            fmt = explicit_fmt or detect_paper_format(w, h, b_name, scale=sc)
+
+            num = self._get_attr_value(attrs, self.sheet_attr_tags) or fmt_item.get("sheet_number", "Unknown")
+            name = self._extract_sheet_name(attrs, self.title_attr_tags)
+            if name == "Unknown" and fmt_item.get("sheet_name", "Unknown") != "Unknown":
+                name = clean_mtext(fmt_item.get("sheet_name"))
+
+            doc_code = clean_mtext(self._get_attr_value(attrs, self.shifr_attr_tags))
+            object_name = self._extract_object_name(attrs, self.object_attr_tags)
+            building_name = self._extract_building_name(attrs, self.building_attr_tags)
 
             num, name = self._check_is_title(num, name, b_name)
 
@@ -111,6 +237,7 @@ class BlockParser(BaseParser):
                 building_name=building_name
             )
             frames.append(frame)
+
         return frames
 
     def _has_block_definitions(self, doc: Any) -> bool:
@@ -128,9 +255,15 @@ class BlockParser(BaseParser):
 
     def _find_frames_via_lisp(self, doc: Any) -> List[Frame]:
         t_start = time.perf_counter()
+        patterns = []
+        for p in self.block_names:
+            patterns.append(p.upper())
+            patterns.append(p.lower())
+        patterns_str = ",".join(dict.fromkeys(patterns))
+
         data = self._run_lisp_export(
             doc, self.lisp_path, "sht-export-blocks",
-            [",".join(self.block_names), ",".join(self.sheet_attr_tags), ",".join(self.title_attr_tags)],
+            [patterns_str, ",".join(self.sheet_attr_tags), ",".join(self.title_attr_tags)],
             prefix="acad_blocks")
         frames = self._convert_items_to_frames(data)
         print(f"[BlockParser] LISP экспорт выполнен за {time.perf_counter() - t_start:.3f} сек "
@@ -138,11 +271,11 @@ class BlockParser(BaseParser):
         return frames
 
     def _find_frames_fallback_com(self, doc: Any) -> List[Frame]:
-        frames = []
+        items = []
         try:
             model_space = doc.ModelSpace
         except Exception:
-            return frames
+            return []
 
         for i in range(model_space.Count):
             try:
@@ -159,7 +292,7 @@ class BlockParser(BaseParser):
 
                     matched = False
                     for pattern in self.block_names:
-                        if fnmatch.fnmatch(block_name.lower(), pattern):
+                        if fnmatch.fnmatch(block_name.lower(), pattern.lower()):
                             matched = True
                             break
 
@@ -170,35 +303,23 @@ class BlockParser(BaseParser):
                             for attr in obj.GetAttributes():
                                 attrs[attr.TagString.upper()] = attr.TextString.strip()
 
-                        sheet_number = self._get_attr_value(attrs, self.sheet_attr_tags) or "Unknown"
-                        sheet_name = self._get_attr_value(attrs, self.title_attr_tags) or "Unknown"
-                        doc_code = self._get_attr_value(attrs, self.shifr_attr_tags)
-                        object_name = self._get_attr_value(attrs, self.object_attr_tags)
-                        building_name = self._get_attr_value(attrs, self.building_attr_tags)
-
-                        sheet_number, sheet_name = self._check_is_title(sheet_number, sheet_name, block_name)
-
-                        w = max_pt[0] - min_pt[0]
-                        h = max_pt[1] - min_pt[1]
-                        blk_scale = getattr(obj, 'XScaleFactor', None)
-                        frame = Frame(
-                            object_id=getattr(obj, 'ObjectID', 0),
-                            sheet_number=sheet_number,
-                            sheet_name=sheet_name,
-                            min_point=min_pt,
-                            max_point=max_pt,
-                            source_type="Block",
-                            paper_format=detect_paper_format(w, h, block_name, scale=blk_scale),
-                            handle=getattr(obj, 'Handle', ''),
-                            doc_code=doc_code,
-                            object_name=object_name,
-                            building_name=building_name
-                        )
-                        frames.append(frame)
+                        blk_scale = getattr(obj, 'XScaleFactor', 1.0)
+                        items.append({
+                            "handle": getattr(obj, 'Handle', ''),
+                            "block_name": block_name,
+                            "sheet_number": "Unknown",
+                            "sheet_name": "Unknown",
+                            "scale": blk_scale,
+                            "min_x": min_pt[0],
+                            "min_y": min_pt[1],
+                            "max_x": max_pt[0],
+                            "max_y": max_pt[1],
+                            "attrs": attrs
+                        })
             except Exception:
                 continue
 
-        return frames
+        return self._convert_items_to_frames(items)
 
     def find_frames(self, doc: Any) -> List[Frame]:
         # 1. Быстрая проверка наличия определений блоков в таблице Blocks (0.001 сек)
@@ -211,3 +332,4 @@ class BlockParser(BaseParser):
         except Exception as e:
             print(f"Предупреждение: LISP поиск блоков не сработал ({e}), запуск резервного метода...")
             return self._find_frames_fallback_com(doc)
+

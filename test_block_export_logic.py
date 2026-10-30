@@ -186,6 +186,90 @@ class TestBlockExportLogic(unittest.TestCase):
         self.assertEqual(sorted_frames[2].sheet_name, "Титульный лист")
         self.assertEqual(sorted_frames[3].sheet_number, "1")
 
+    def test_paired_stamp_and_format_blocks(self):
+        """Проверка связки: внешний формат (BRU_format) + вложенный штамп (BRU_stamp_r1)."""
+        raw_items = [
+            {
+                "handle": "ABA",
+                "block_name": "BRU_format",
+                "scale": 1.0,
+                "min_x": 1015.62,
+                "min_y": 182.66,
+                "max_x": 169215.62,
+                "max_y": 59582.66,
+                "attrs": {
+                    "ФОРМАТ": "A2x4",
+                    "РАЗМЕР_ЛИСТА": "1682x594"
+                }
+            },
+            {
+                "handle": "AFC",
+                "block_name": "BRU_stamp_r1",
+                "scale": 1.0,
+                "min_x": 147715.62,
+                "min_y": 682.66,
+                "max_x": 168973.08,
+                "max_y": 7989.8,
+                "attrs": {
+                    "DOCUM": "85000079/1.2.2-19,20-КР",
+                    "LIST": "0",
+                    "CHERTEZH": "\\W0.8000;Схема расположения фундаментов",
+                    "OBJECT": "\\W0.7000;Сахарный завод\\P5000 т свеклы",
+                    "BUILD": "\\W0.7000;Склад сахара\\PГалерея"
+                }
+            }
+        ]
+
+        parser = BlockParser()
+        frames = parser._convert_items_to_frames(raw_items)
+
+        # Должен быть создан только 1 лист (внешний формат), а штамп не дублируется
+        self.assertEqual(len(frames), 1)
+        f = frames[0]
+        self.assertEqual(f.handle, "ABA")
+        self.assertEqual(f.paper_format, "A2x4")
+        self.assertEqual(f.sheet_number, "0")
+        self.assertEqual(f.sheet_name, "Схема расположения фундаментов")
+        self.assertEqual(f.doc_code, "85000079/1.2.2-19,20-КР")
+        self.assertEqual(f.object_name, "Сахарный завод 5000 т свеклы")
+        self.assertEqual(f.building_name, "Склад сахара Галерея")
+
+    def test_vcformat_exclamation_tags_and_multiline_name(self):
+        """Проверка динамического блока vcFormat!_версия_2 с !-тегами и составным наименованием."""
+        raw_items = [
+            {
+                "handle": "C58",
+                "block_name": "vcFormat!_версия_2",
+                "scale": 1.0,
+                "min_x": 229390.68,
+                "min_y": 11622.81,
+                "max_x": 229600.68,
+                "max_y": 11919.81,
+                "attrs": {
+                    "!ФОРМАТ": "A4",
+                    "!ШИФР": "00.000",
+                    "!НОМЕР": "1",
+                    "НАИМЕНОВАНИЕ_ЛИСТА1": "2",
+                    "НАИМЕНОВАНИЕ_ЛИСТА2": "11",
+                    "НАИМЕНОВАНИЕ_ЛИСТА3": "44",
+                    "НАИМЕНОВАНИЕ2": "123123",
+                    "СООРУЖЕНИЕ2": "333"
+                }
+            }
+        ]
+
+        parser = BlockParser()
+        frames = parser._convert_items_to_frames(raw_items)
+
+        self.assertEqual(len(frames), 1)
+        f = frames[0]
+        self.assertEqual(f.paper_format, "A4")
+        self.assertEqual(f.sheet_number, "1")
+        self.assertEqual(f.sheet_name, "2 11 44")
+        self.assertEqual(f.doc_code, "00.000")
+        self.assertEqual(f.object_name, "123123")
+        self.assertEqual(f.building_name, "333")
+
 
 if __name__ == "__main__":
     unittest.main()

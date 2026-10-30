@@ -10,10 +10,10 @@ class DocumentScanner:
     Агрегатор, который запускает все парсеры и собирает рамки со всего чертежа.
     """
     def __init__(self):
-        # Настраиваем парсеры: быстрый LISP-парсер СПДС первым
+        # Настраиваем парсеры: быстрый LISP-парсер СПДС первым, затем универсальный парсер блоков
         self.parsers = [
             SPDSParser(),
-            BlockParser(block_names=["SHT_*", "Формат*"], sheet_attr_tags=["SHEET", "ЛИСТ"]),
+            BlockParser(),
             PolylineParser(target_layer="0000_Формат")
         ]
 

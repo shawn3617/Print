@@ -37,15 +37,27 @@ class AutoCADConnector:
         Возвращает True в случае успеха, иначе генерирует исключение.
         """
         try:
+            # Гарантируем подключение к интерактивному рабочему столу Windows
+            try:
+                import ctypes
+                hDesk = ctypes.windll.user32.OpenDesktopW("Default", 0, False, 0x01FF)
+                if hDesk:
+                    ctypes.windll.user32.SetThreadDesktop(hDesk)
+            except Exception:
+                pass
+
             # Инициализация COM (необходимо для работы в разных потоках)
             pythoncom.CoInitialize()
             
             # Пытаемся получить доступ к уже запущенному процессу AutoCAD
             self.app = win32com.client.GetActiveObject("AutoCAD.Application")
             try:
-                self.doc = self.app.ActiveDocument
+                self.doc = _retry_busy(lambda: self.app.ActiveDocument, max_attempts=12, delay=0.25)
             except Exception:
-                self.doc = None
+                try:
+                    self.doc = self.app.ActiveDocument
+                except Exception:
+                    self.doc = None
             return True
             
         except pythoncom.com_error as e:
