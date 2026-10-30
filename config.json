@@ -8,14 +8,14 @@
   "source_mode": "Модель (Model Space)",
   "table_column_widths": [
     65,
-    60,
-    202,
-    260,
-    220,
+    115,
+    174,
+    171,
+    177,
     200,
     75,
     140,
-    131
+    90
   ],
   "theme": "dark_catppuccin",
   "hidden_columns": []

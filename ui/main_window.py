@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QSizePolicy, QListView, QFrame, QMenu
 )
 from PySide6.QtCore import Qt, Signal, QMimeData
-from PySide6.QtGui import QDrag, QAction, QGuiApplication
+from PySide6.QtGui import QDrag, QAction, QGuiApplication, QShortcut, QKeySequence
 
 from core.autocad_connector import AutoCADConnector
 from core.scanner import DocumentScanner
@@ -23,6 +23,7 @@ from core.config_manager import ConfigManager
 from core.models import natural_sheet_sort_key, frame_natural_sort_key
 from core.exporter import SheetExporter
 from ui.themes import THEMES, build_theme_qss, get_theme_status_colors
+from ui.help_dialog import HelpDialog
 
 
 class ReorderableTableWidget(QTableWidget):
@@ -279,6 +280,13 @@ class PrintManagerUI(QMainWindow):
         batch_bar.addWidget(btn_close_opened)
 
         batch_bar.addStretch()
+
+        self.btn_help = QPushButton("📖 Инструкция (F1)")
+        self.btn_help.setProperty("cssClass", "btn_tool")
+        self.btn_help.setToolTip("Открыть иллюстрированное руководство пользователя и частые вопросы (F1)")
+        self.btn_help.clicked.connect(self.show_help_dialog)
+        batch_bar.addWidget(self.btn_help)
+
         left_layout.addLayout(batch_bar)
 
         # Панель фильтрации и быстрого поиска
@@ -505,6 +513,15 @@ class PrintManagerUI(QMainWindow):
         right_layout.addWidget(self.btn_print)
         
         main_layout.addWidget(right_widget)
+
+        # Горячая клавиша F1 для вызова руководства пользователя
+        self.shortcut_f1 = QShortcut(QKeySequence("F1"), self)
+        self.shortcut_f1.activated.connect(self.show_help_dialog)
+
+    def show_help_dialog(self):
+        """Открывает окно руководства пользователя."""
+        dlg = HelpDialog(current_theme_id=getattr(self, "current_theme", "dark_catppuccin"), parent=self)
+        dlg.exec()
 
     def apply_initial_config(self):
         """Применяет сохраненные настройки из config.json к элементам интерфейса."""
@@ -1261,9 +1278,9 @@ class PrintManagerUI(QMainWindow):
         if self.is_filter_active():
             self.lbl_status_right.setText("Фильтр активен")
         elif count == 0:
-            self.lbl_status_right.setText("Отметьте листы галочками для печати")
+            self.lbl_status_right.setText("Отметьте листы галочками | F1 — Инструкция")
         else:
-            self.lbl_status_right.setText("Двойной клик — показать в AutoCAD")
+            self.lbl_status_right.setText("Двойной клик — в AutoCAD | F1 — Инструкция")
 
     def is_row_checked(self, row: int) -> bool:
         chk_widget = self.table.cellWidget(row, 0)

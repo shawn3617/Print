@@ -358,6 +358,40 @@ def build_theme_qss(theme_id: str) -> str:
             color: {theme['text_muted']};
             font-size: 12px;
         }}
+        QTabWidget::pane {{
+            border: 1px solid {theme['border']};
+            background-color: {theme['bg_card']};
+            border-radius: 6px;
+        }}
+        QTabBar::tab {{
+            background-color: {theme['btn_tool_bg']};
+            color: {theme['text_primary']};
+            border: 1px solid {theme['border']};
+            border-bottom: none;
+            border-top-left-radius: 6px;
+            border-top-right-radius: 6px;
+            padding: 8px 16px;
+            margin-right: 4px;
+            font-size: 13px;
+            font-weight: bold;
+        }}
+        QTabBar::tab:selected {{
+            background-color: {theme['bg_card']};
+            color: {theme['accent_color']};
+            border-bottom: 2px solid {theme['accent_color']};
+        }}
+        QTabBar::tab:hover:!selected {{
+            background-color: {theme['btn_tool_hover']};
+        }}
+        QTextBrowser {{
+            background-color: {theme['bg_card']};
+            color: {theme['text_primary']};
+            border: none;
+            border-radius: 6px;
+            padding: 6px;
+            selection-background-color: {theme['popup_item_selected_bg']};
+            selection-color: {theme['table_item_selected_text']};
+        }}
         QMenu {{
             background-color: {theme['popup_bg']};
             color: {theme['text_primary']};
