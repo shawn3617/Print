@@ -15,7 +15,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon, QPixmap, QFont
 
 from core.resource_utils import get_resource_path
-from ui.themes import THEMES, build_theme_qss
+from ui.themes import THEMES, build_theme_qss, apply_title_bar_theme
 
 APP_NAME = "AutoCAD Batch PDF Plotter"
 APP_SUBTITLE = "PrintPDF"
@@ -236,3 +236,7 @@ class AboutDialog(QDialog):
             clipboard.setText(self.diag_text)
             self.btn_copy_info.setText("✓ Скопировано")
             QTimer.singleShot(2000, lambda: self.btn_copy_info.setText("📋 Скопировать"))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        apply_title_bar_theme(self, getattr(self, "current_theme_id", "dark_catppuccin"))

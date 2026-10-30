@@ -23,7 +23,7 @@ from core.config_manager import ConfigManager
 from core.models import natural_sheet_sort_key, frame_natural_sort_key
 from core.exporter import SheetExporter
 from core.resource_utils import get_resource_path
-from ui.themes import THEMES, build_theme_qss, get_theme_status_colors
+from ui.themes import THEMES, build_theme_qss, get_theme_status_colors, apply_title_bar_theme
 from ui.help_dialog import HelpDialog
 from ui.about_dialog import AboutDialog
 
@@ -660,6 +660,11 @@ class PrintManagerUI(QMainWindow):
                 self.lbl_document.setStyleSheet(f"color: {ok_col}; font-weight: bold;")
 
         self.update_print_counter()
+        apply_title_bar_theme(self, theme_id)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        apply_title_bar_theme(self, getattr(self, "current_theme", "dark_catppuccin"))
 
     def on_source_mode_changed(self, text: str):
         if "Layout" in text or "Листы" in text:

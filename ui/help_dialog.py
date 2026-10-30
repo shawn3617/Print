@@ -12,7 +12,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QFont
 
 from core.resource_utils import get_resource_path
-from ui.themes import THEMES
+from ui.themes import THEMES, apply_title_bar_theme
 
 
 def _get_help_html(theme_id: str, tab_id: str) -> str:
@@ -355,3 +355,8 @@ class HelpDialog(QDialog):
         self.current_theme_id = theme_id
         for tab_id, browser in self.browsers.items():
             browser.setHtml(_get_help_html(theme_id, tab_id))
+        apply_title_bar_theme(self, theme_id)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        apply_title_bar_theme(self, getattr(self, "current_theme_id", "dark_catppuccin"))

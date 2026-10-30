@@ -431,3 +431,79 @@ def get_theme_status_colors(theme_id: str) -> Tuple[str, str]:
     """Возвращает пару (цвет_успеха, цвет_ошибки) для указанной темы."""
     theme = THEMES.get(theme_id, THEMES["dark_catppuccin"])
     return theme["status_ok_color"], theme["status_err_color"]
+
+
+def apply_title_bar_theme(widget, theme_id: str):
+    """
+    Окрашивает верхнюю полоску (строку заголовка Windows / DWM Title Bar)
+    в основной цвет активной темы.
+    Поддерживает:
+    - Windows 10 (Immersive Dark Mode): переключение на тёмную строку заголовка;
+    - Windows 11: точная покраска заголовка в цвет фона темы (DWMWA_CAPTION_COLOR = 35)
+      и текста заголовка (DWMWA_TEXT_COLOR = 36).
+    """
+    import sys
+    if sys.platform != "win32":
+        return
+
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        if not hasattr(widget, "winId"):
+            return
+        hwnd = int(widget.winId())
+        if not hwnd:
+            return
+
+        theme = THEMES.get(theme_id, THEMES["dark_catppuccin"])
+        is_dark = (theme_id != "light")
+        bg_hex = theme.get("bg_main", "#1e1e2e")
+        text_hex = theme.get("text_primary", "#cdd6f4")
+
+        dwm = ctypes.windll.dwmapi
+
+        # 1. Тёмная / светлая тема заголовка (Windows 10 1809+ / Windows 11)
+        val = ctypes.c_int(1 if is_dark else 0)
+        hr = dwm.DwmSetWindowAttribute(
+            wintypes.HWND(hwnd),
+            wintypes.DWORD(20),  # DWMWA_USE_IMMERSIVE_DARK_MODE (Windows 11 / Win 10 2004+)
+            ctypes.byref(val),
+            ctypes.sizeof(val)
+        )
+        if hr != 0:
+            dwm.DwmSetWindowAttribute(
+                wintypes.HWND(hwnd),
+                wintypes.DWORD(19),  # DWMWA_USE_IMMERSIVE_DARK_MODE_OLD (Win 10 1809-1909)
+                ctypes.byref(val),
+                ctypes.sizeof(val)
+            )
+
+        # 2. Точный цвет фона заголовка на Windows 11 (DWMWA_CAPTION_COLOR = 35)
+        # Windows API принимает цвета в формате BGR (0x00BBGGRR)
+        if bg_hex and bg_hex.startswith("#") and len(bg_hex) == 7:
+            r = int(bg_hex[1:3], 16)
+            g = int(bg_hex[3:5], 16)
+            b = int(bg_hex[5:7], 16)
+            bgr_bg = wintypes.DWORD(r | (g << 8) | (b << 16))
+            dwm.DwmSetWindowAttribute(
+                wintypes.HWND(hwnd),
+                wintypes.DWORD(35),  # DWMWA_CAPTION_COLOR
+                ctypes.byref(bgr_bg),
+                ctypes.sizeof(bgr_bg)
+            )
+
+        # 3. Точный цвет текста заголовка на Windows 11 (DWMWA_TEXT_COLOR = 36)
+        if text_hex and text_hex.startswith("#") and len(text_hex) == 7:
+            r = int(text_hex[1:3], 16)
+            g = int(text_hex[3:5], 16)
+            b = int(text_hex[5:7], 16)
+            bgr_txt = wintypes.DWORD(r | (g << 8) | (b << 16))
+            dwm.DwmSetWindowAttribute(
+                wintypes.HWND(hwnd),
+                wintypes.DWORD(36),  # DWMWA_TEXT_COLOR
+                ctypes.byref(bgr_txt),
+                ctypes.sizeof(bgr_txt)
+            )
+    except Exception:
+        pass
