@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QSizePolicy, QListView, QFrame, QMenu
 )
 from PySide6.QtCore import Qt, Signal, QMimeData
-from PySide6.QtGui import QDrag, QAction, QGuiApplication, QShortcut, QKeySequence
+from PySide6.QtGui import QDrag, QAction, QGuiApplication, QShortcut, QKeySequence, QIcon
 
 from core.autocad_connector import AutoCADConnector
 from core.scanner import DocumentScanner
@@ -22,8 +22,10 @@ from core.printer import BatchPrinter, PrintCancelledError
 from core.config_manager import ConfigManager
 from core.models import natural_sheet_sort_key, frame_natural_sort_key
 from core.exporter import SheetExporter
+from core.resource_utils import get_resource_path
 from ui.themes import THEMES, build_theme_qss, get_theme_status_colors
 from ui.help_dialog import HelpDialog
+from ui.about_dialog import AboutDialog
 
 
 class ReorderableTableWidget(QTableWidget):
@@ -185,6 +187,9 @@ class PrintManagerUI(QMainWindow):
     def __init__(self, config_manager=None):
         super().__init__()
         self.setWindowTitle("Smart Batch Print - AutoCAD")
+        icon_path = get_resource_path("autocad_to_pdf_icon.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         self.resize(1100, 650)
         self.setMinimumSize(780, 480)
         self.setAcceptDrops(True)
@@ -286,6 +291,12 @@ class PrintManagerUI(QMainWindow):
         self.btn_help.setToolTip("Открыть иллюстрированное руководство пользователя и частые вопросы (F1)")
         self.btn_help.clicked.connect(self.show_help_dialog)
         batch_bar.addWidget(self.btn_help)
+
+        self.btn_about = QPushButton("ℹ️ О программе")
+        self.btn_about.setProperty("cssClass", "btn_tool")
+        self.btn_about.setToolTip("Информация о программе, версии и системе")
+        self.btn_about.clicked.connect(self.show_about_dialog)
+        batch_bar.addWidget(self.btn_about)
 
         left_layout.addLayout(batch_bar)
 
@@ -555,6 +566,15 @@ class PrintManagerUI(QMainWindow):
     def show_help_dialog(self):
         """Открывает окно руководства пользователя."""
         dlg = HelpDialog(current_theme_id=getattr(self, "current_theme", "dark_catppuccin"), parent=self)
+        dlg.exec()
+
+    def show_about_dialog(self):
+        """Открывает окно «О программе»."""
+        dlg = AboutDialog(
+            current_theme_id=getattr(self, "current_theme", "dark_catppuccin"),
+            connector=getattr(self, "connector", None),
+            parent=self
+        )
         dlg.exec()
 
     def apply_initial_config(self):

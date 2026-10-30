@@ -305,6 +305,7 @@ class TestBatchUI(unittest.TestCase):
 
         # 4. Копировать строку в буфер обмена
         self.win.copy_full_row(0)
+        QApplication.processEvents()
         clipboard_text = QGuiApplication.clipboard().text()
         self.assertIn("1", clipboard_text)
         self.assertIn("2024-АР-1", clipboard_text)
