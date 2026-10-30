@@ -102,14 +102,14 @@ class SPDSParser(BaseParser):
             num = clean_rtf(num)
             name = clean_rtf(name)
 
-            # Распознавание титульного листа СПДС (шаблон без штампа: idTemplate < 0, в т.ч. -3 титульный лист, -1 без штампа)
-            id_tmpl_str = str(fields.get("idTemplate", "")).strip()
-            try:
-                id_tmpl_val = float(id_tmpl_str)
-            except (ValueError, TypeError):
-                id_tmpl_val = None
-
-            is_title = (id_tmpl_val is not None and id_tmpl_val < 0) or name.lower() in ("титульный лист", "титул", "обложка")
+            # Распознавание титульного листа СПДС:
+            # Титульный лист в СПДС не имеет номера листа и либо явно назван «Титульный лист»/«Обложка»,
+            # либо у него нет основной надписи (пустой номер, пустое наименование и пустой шифр).
+            has_num = bool(num and num.lower() != "unknown")
+            is_title = (
+                name.lower() in ("титульный лист", "титул", "обложка")
+                or (not has_num and not name and not shifr)
+            )
             if is_title:
                 num = ""
                 name = "Титульный лист"

@@ -241,17 +241,9 @@ class BlockParser(BaseParser):
         return frames
 
     def _has_block_definitions(self, doc: Any) -> bool:
-        """Быстрая проверка таблицы определений блоков (занимает 0.002 сек)"""
-        try:
-            blocks = doc.Blocks
-            for b_idx in range(blocks.Count):
-                b_name = getattr(blocks.Item(b_idx), 'Name', '').lower()
-                for pattern in self.block_names:
-                    if fnmatch.fnmatch(b_name, pattern):
-                        return True
-            return False
-        except Exception:
-            return True
+        # LISP-экспорт sht-export-blocks выполняется за долю секунды и сам эффективно
+        # ищет вхождения блоков; COM-перебор doc.Blocks приводил к зависанию на 16+ сек.
+        return True
 
     def _find_frames_via_lisp(self, doc: Any) -> List[Frame]:
         t_start = time.perf_counter()
@@ -371,7 +363,7 @@ class BlockParser(BaseParser):
         """
         needs_enrichment = [
             f for f in frames
-            if f.sheet_number in ("Unknown", "") or f.sheet_name in ("Unknown", "") or not f.doc_code
+            if f.sheet_number in ("Unknown", "") or f.sheet_name in ("Unknown", "")
         ]
         if not needs_enrichment or not doc:
             return frames

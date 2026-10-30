@@ -265,13 +265,13 @@ class TestSPDSExportLogic(unittest.TestCase):
         rtf_num = '{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil\\fcharset0 CS Standard;}}  \\fs17  \\v\\embo\\impr <ref id="2094871149">\\v0\\embo0 1\\v\\embo </ref>\\v0\\embo0\\impr0  \\par  }'
         self.assertEqual(clean_rtf(rtf_num), "1")
 
-        # Тест титульного листа SPDS (idTemplate = -3)
+        # Тест титульного листа SPDS (без штампа или с именем "Титульный лист")
         parser = SPDSParser()
         raw_items = [
             {
                 "handle": "48F",
                 "form": "6",
-                "sheet_number": rtf_num,
+                "sheet_number": "",
                 "sheet_name": "",
                 "shifr": "",
                 "format": "A4",
@@ -289,7 +289,7 @@ class TestSPDSExportLogic(unittest.TestCase):
             {
                 "handle": "490",
                 "form": "3",
-                "sheet_number": "2",
+                "sheet_number": rtf_num,
                 "sheet_name": "План перекрытия",
                 "shifr": "01-24",
                 "format": "A3",
@@ -311,15 +311,15 @@ class TestSPDSExportLogic(unittest.TestCase):
         self.assertEqual(frames[0].sheet_name, "Титульный лист")
         self.assertEqual(frames[0].paper_format, "A4")
         
-        # Обычный лист
-        self.assertEqual(frames[1].sheet_number, "2")
+        # Обычный лист (с проверкой RTF-очистки номера)
+        self.assertEqual(frames[1].sheet_number, "1")
         self.assertEqual(frames[1].sheet_name, "План перекрытия")
 
         # Проверка сортировки: титульник всегда первый
         from core.models import frame_natural_sort_key
         sorted_frames = sorted(frames, key=frame_natural_sort_key)
         self.assertEqual(sorted_frames[0].sheet_name, "Титульный лист")
-        self.assertEqual(sorted_frames[1].sheet_number, "2")
+        self.assertEqual(sorted_frames[1].sheet_number, "1")
 
 
 if __name__ == "__main__":
