@@ -4,7 +4,7 @@ from typing import List, Any
 from core.models import Frame, detect_paper_format, ALL_FORMATS
 from parsers.base_parser import BaseParser
 
-from core.resource_utils import get_resource_path
+from core.resource_utils import get_resource_path, get_lisp_path
 
 
 def clean_rtf(text: str) -> str:
@@ -25,7 +25,7 @@ class SPDSParser(BaseParser):
         """
         self.spds_names = [name.lower() for name in (spds_names or ["mcsdbobjectformat", "spdbformat"])]
         # Путь к LISP-экспортеру на базе алгоритмов SHEETS.lsp
-        self.lisp_path = get_resource_path("core/lisp/spds_export.lsp")
+        self.lisp_path = get_lisp_path("core/lisp/spds_export.lsp")
 
     def _find_frames_via_lisp(self, doc: Any) -> List[Frame]:
         """Быстрый поиск СПДС-рамок через AutoLISP-экспорт во временный JSON"""
@@ -114,18 +114,23 @@ class SPDSParser(BaseParser):
                 num = ""
                 name = "Титульный лист"
 
+            layout_name = item.get("layout", "Model") or "Model"
+            is_model = layout_name.lower() == "model"
+            source_type = "SPDS" if is_model else "SPDS (Лист)"
+
             frame = Frame(
                 object_id=0,
                 sheet_number=num,
                 sheet_name=name,
                 min_point=(min_x, min_y, 0.0),
                 max_point=(max_x, max_y, 0.0),
-                source_type="SPDS",
+                source_type=source_type,
                 paper_format=detected_fmt,
                 handle=hdl,
                 doc_code=shifr,
                 object_name=obj_name,
-                building_name=bld_name
+                building_name=bld_name,
+                layout_name=layout_name
             )
             frames.append(frame)
 
@@ -134,33 +139,58 @@ class SPDSParser(BaseParser):
     def _find_frames_fallback_com(self, doc: Any) -> List[Frame]:
         """Резервный перебор объектов через COM, если LISP недоступен"""
         frames = []
+        spaces_to_scan = []
         try:
-            model_space = doc.ModelSpace
+            if hasattr(doc, "ModelSpace"):
+                spaces_to_scan.append(("Model", doc.ModelSpace))
         except Exception:
-            return frames
+            pass
 
-        for i in range(model_space.Count):
+        try:
+            if hasattr(doc, "Layouts"):
+                for i in range(doc.Layouts.Count):
+                    lyt = doc.Layouts.Item(i)
+                    if getattr(lyt, "ModelType", False) or lyt.Name.lower() == "model":
+                        continue
+                    try:
+                        spaces_to_scan.append((lyt.Name, lyt.Block))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        for lyt_name, space in spaces_to_scan:
             try:
-                obj = model_space.Item(i)
-                entity_name = getattr(obj, 'EntityName', '').lower()
-
-                if entity_name in self.spds_names:
-                    min_pt, max_pt = obj.GetBoundingBox()
-                    w = max_pt[0] - min_pt[0]
-                    h = max_pt[1] - min_pt[1]
-                    frame = Frame(
-                        object_id=getattr(obj, 'ObjectID', 0),
-                        sheet_number="Unknown",
-                        sheet_name="Unknown",
-                        min_point=min_pt,
-                        max_point=max_pt,
-                        source_type="SPDS",
-                        paper_format=detect_paper_format(w, h),
-                        handle=getattr(obj, 'Handle', '')
-                    )
-                    frames.append(frame)
+                cnt = space.Count
             except Exception:
                 continue
+
+            is_model = lyt_name.lower() == "model"
+            source_type = "SPDS" if is_model else "SPDS (Лист)"
+
+            for i in range(cnt):
+                try:
+                    obj = space.Item(i)
+                    entity_name = getattr(obj, 'EntityName', '').lower()
+
+                    if entity_name in self.spds_names:
+                        min_pt, max_pt = obj.GetBoundingBox()
+                        w = max_pt[0] - min_pt[0]
+                        h = max_pt[1] - min_pt[1]
+                        frame = Frame(
+                            object_id=getattr(obj, 'ObjectID', 0),
+                            sheet_number="Unknown",
+                            sheet_name="Unknown",
+                            min_point=min_pt,
+                            max_point=max_pt,
+                            source_type=source_type,
+                            paper_format=detect_paper_format(w, h),
+                            handle=getattr(obj, 'Handle', ''),
+                            layout_name=lyt_name
+                        )
+                        frames.append(frame)
+                except Exception:
+                    continue
 
         return frames
 

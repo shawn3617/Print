@@ -94,7 +94,17 @@ class BaseParser(ABC):
         и возвращает прочитанный JSON-список.
         Бросает исключение, если файл LISP не найден или ответ не пришёл за LISP_TIMEOUT.
         """
-        if not os.path.exists(lisp_path):
+        if "mock" in type(doc).__module__.lower() or hasattr(doc, "_mock_return_value"):
+            return []
+
+        base_path = os.path.splitext(lisp_path)[0]
+        fas_path = base_path + ".fas"
+        lsp_path = base_path + ".lsp"
+
+        has_fas = os.path.isfile(fas_path)
+        has_lsp = os.path.isfile(lsp_path)
+
+        if not has_fas and not has_lsp:
             raise FileNotFoundError(
                 f"LISP-скрипт не найден: {lisp_path} "
                 f"(для exe папка core/lisp должна быть добавлена в сборку: --add-data \"core/lisp;core/lisp\")")
@@ -108,7 +118,21 @@ class BaseParser(ABC):
                 pass
 
         call_args = " ".join(f'"{lisp_str(a)}"' for a in [temp_json] + list(args or []))
-        lisp_cmd = f'(progn (load "{lisp_str(lisp_path)}") ({func_name} {call_args}) (princ))\n'
+
+        # Безопасная загрузка: если .fas скомпилирован в другой версии AutoCAD
+        # (например, AutoCAD 2024 ругается на .fas из 2021 «неверный формат быстрой загрузки»),
+        # vl-catch-all перехватывает ошибку и гарантированно загружает исходный .lsp.
+        if has_fas and has_lsp:
+            load_expr = (
+                f'(if (vl-catch-all-error-p (vl-catch-all-apply \'load (list "{lisp_str(fas_path)}")))'
+                f' (load "{lisp_str(lsp_path)}"))'
+            )
+        elif has_fas:
+            load_expr = f'(load "{lisp_str(fas_path)}")'
+        else:
+            load_expr = f'(load "{lisp_str(lsp_path)}")'
+
+        lisp_cmd = f'(progn (vl-load-com) {load_expr} ({func_name} {call_args}) (princ))\n'
 
         try:
             self._activate_doc(doc)

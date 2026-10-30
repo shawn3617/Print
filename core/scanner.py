@@ -50,7 +50,7 @@ class DocumentScanner:
                 PolylineParser(target_layer="0000_Формат")
             ]
 
-    def scan_document(self, doc, frame_type: str = "all", custom_block_name: str = "") -> List[Frame]:
+    def scan_document(self, doc, frame_type: str = "all", custom_block_name: str = "", space: str = "model") -> List[Frame]:
         import time
         all_frames: List[Frame] = []
         active_parsers = self.get_parsers_for_mode(frame_type, custom_block_name)
@@ -64,6 +64,12 @@ class DocumentScanner:
                     all_frames.extend(frames)
             except Exception as e:
                 print(f"Ошибка при работе парсера {parser.__class__.__name__}: {e}")
+
+        # Фильтрация по пространству (Модель / Листы)
+        if space == "model":
+            all_frames = [f for f in all_frames if getattr(f, "layout_name", "Model").lower() == "model"]
+        elif space == "layouts":
+            all_frames = [f for f in all_frames if getattr(f, "layout_name", "Model").lower() != "model"]
 
         # Дедупликация рамок при совпадении координат (если несколько парсеров зацепили одну область)
         if all_frames:
@@ -82,9 +88,9 @@ class DocumentScanner:
             all_frames = unique_frames
         
         # Согласование масштабов рамок чертежа:
-        # Если в чертеже преобладает определенный масштаб (например, 1:100),
+        # Для пространства модели: если в чертеже преобладает определенный масштаб (например, 1:100),
         # перепроверяем форматы рамок через доминирующий масштаб проекта.
-        if len(all_frames) > 1:
+        if space == "model" and len(all_frames) > 1:
             try:
                 from core.models import ALL_FORMATS, detect_paper_format
                 from collections import Counter
@@ -130,15 +136,18 @@ class DocumentScanner:
 
 
 
-    def scan_layouts(self, doc) -> List[Frame]:
+    def scan_layouts(self, doc, frame_type: str = "all", custom_block_name: str = "") -> List[Frame]:
         """
         Сканирует вкладки пространства листа (Layouts), исключая пространство модели (Model).
-        Возвращает список Frame для каждой вкладки, упорядоченный по визуальному порядку вкладок (TabOrder).
+        Приоритетно выполняет поиск блоков рамок (и СПДС) в пространстве листа (Paper Space).
+        Если на конкретной вкладке Layout найдены блоки рамок, извлекает их атрибуты
+        (номер, наименование, шифр, формат).
+        Если на вкладке блоков рамок нет, создает резервную рамку на базе параметров самой вкладки.
+        Возвращает список Frame, упорядоченный по визуальному порядку вкладок (TabOrder).
         """
         import re
         from core.models import detect_format_from_media_name
         
-        layout_frames = []
         doc_path = ""
         doc_name = ""
         try:
@@ -147,48 +156,116 @@ class DocumentScanner:
         except Exception:
             pass
 
+        # 1. Собираем все вкладки Layout (исключая Model)
+        layouts_info = []
         try:
             layouts = doc.Layouts
             for i in range(layouts.Count):
                 layout = layouts.Item(i)
-                # Пропускаем пространство модели
                 if getattr(layout, "ModelType", False) or layout.Name.lower() == "model":
                     continue
-                    
                 tab_order = getattr(layout, "TabOrder", i)
-                name = layout.Name
-                media_name = getattr(layout, "CanonicalMediaName", "")
-                handle = getattr(layout, "Handle", "")
-                obj_id = getattr(layout, "ObjectID", 0)
-                
-                # Определение формата бумаги по настройкам листа
+                layouts_info.append((tab_order, layout.Name, layout))
+        except Exception as e:
+            print(f"Ошибка при получении списка Layouts: {e}")
+
+        layouts_info.sort(key=lambda x: x[0])
+
+        # 2. Ищем рамки-блоки и СПДС на листах через активные парсеры
+        frames_by_layout = {}
+        if frame_type != FRAME_TYPE_POLYLINE:
+            active_parsers = self.get_parsers_for_mode(frame_type, custom_block_name)
+            paper_parsers = [p for p in active_parsers if not isinstance(p, PolylineParser)]
+            for parser in paper_parsers:
+                try:
+                    frames = parser.find_frames(doc)
+                    if frames:
+                        for f in frames:
+                            lyt_n = getattr(f, "layout_name", "Model")
+                            if lyt_n.lower() != "model":
+                                frames_by_layout.setdefault(lyt_n.lower(), []).append(f)
+                except Exception as e:
+                    print(f"Предупреждение: ошибка поиска рамок на листах в {parser.__class__.__name__}: {e}")
+
+        # Дедупликация рамок на каждом листе (если SPDS и Block зацепили один объект)
+        for lyt_k in frames_by_layout:
+            lyt_frames = frames_by_layout[lyt_k]
+            if len(lyt_frames) > 1:
+                uniq = []
+                for f in lyt_frames:
+                    dup = False
+                    for u in uniq:
+                        if (abs(f.min_point[0] - u.min_point[0]) < 10.0 and
+                            abs(f.min_point[1] - u.min_point[1]) < 10.0 and
+                            abs(f.max_point[0] - u.max_point[0]) < 10.0 and
+                            abs(f.max_point[1] - u.max_point[1]) < 10.0):
+                            dup = True
+                            break
+                    if not dup:
+                        uniq.append(f)
+                frames_by_layout[lyt_k] = uniq
+
+        # 3. Сопоставляем вкладки и рамки
+        result_frames = []
+        handled_layout_keys = set()
+
+        for tab_order, lyt_name, lyt_obj in layouts_info:
+            lyt_key = lyt_name.lower()
+            handled_layout_keys.add(lyt_key)
+            blks = frames_by_layout.get(lyt_key, [])
+            if blks:
+                # На этой вкладке есть блоки рамок
+                for blk in blks:
+                    if not blk.layout_name:
+                        blk.layout_name = lyt_name
+                    if not blk.sheet_name or blk.sheet_name.lower() == "unknown":
+                        blk.sheet_name = lyt_name
+                    if not blk.sheet_number or blk.sheet_number.lower() == "unknown":
+                        num_match = re.search(r'\d+', lyt_name)
+                        blk.sheet_number = num_match.group(0) if num_match else str(tab_order)
+                    if not blk.dwg_path and doc_path:
+                        blk.dwg_path = doc_path
+                    if not blk.dwg_name and doc_name:
+                        blk.dwg_name = doc_name
+                    result_frames.append(blk)
+            else:
+                # Резервный лист Layout целиком
+                raw_media = getattr(lyt_obj, "CanonicalMediaName", "")
+                media_name = str(raw_media) if isinstance(raw_media, str) else ""
+                raw_handle = getattr(lyt_obj, "Handle", "")
+                handle = str(raw_handle) if isinstance(raw_handle, str) else ""
+                raw_id = getattr(lyt_obj, "ObjectID", 0)
+                obj_id = raw_id if isinstance(raw_id, int) else 0
                 paper_fmt = detect_format_from_media_name(media_name)
-                
-                # Номер листа: извлекаем число из названия вкладки, иначе tab_order
-                num_match = re.search(r'\d+', name)
+                num_match = re.search(r'\d+', lyt_name)
                 sheet_num = num_match.group(0) if num_match else str(tab_order)
-                
-                frame = Frame(
+
+                fallback_frame = Frame(
                     object_id=obj_id,
                     sheet_number=sheet_num,
-                    sheet_name=name,
+                    sheet_name=lyt_name,
                     min_point=(0.0, 0.0, 0.0),
                     max_point=(0.0, 0.0, 0.0),
                     source_type="Layout",
                     paper_format=paper_fmt,
                     handle=handle,
                     dwg_path=doc_path,
-                    dwg_name=doc_name
+                    dwg_name=doc_name,
+                    layout_name=lyt_name
                 )
-                layout_frames.append((tab_order, frame))
+                result_frames.append(fallback_frame)
 
-                
-        except Exception as e:
-            print(f"Ошибка при сканировании Layouts: {e}")
-            
-        # Сортируем строго по TabOrder (порядок вкладок в интерфейсе AutoCAD)
-        layout_frames.sort(key=lambda x: x[0])
-        return [item[1] for item in layout_frames]
+        # 4. Если нашлись блоки на листах, не вошедших в doc.Layouts (редкий случай)
+        for lyt_k, blks in frames_by_layout.items():
+            if lyt_k not in handled_layout_keys:
+                for blk in blks:
+                    if not blk.dwg_path and doc_path:
+                        blk.dwg_path = doc_path
+                    if not blk.dwg_name and doc_name:
+                        blk.dwg_name = doc_name
+                    result_frames.append(blk)
+
+        return result_frames
 
     def scan_files(
         self,
@@ -247,9 +324,9 @@ class DocumentScanner:
                     progress_callback(idx, total_files, fname, f"{status_act} ({idx + 1}/{total_files}): {fname}...")
                     
                 if is_layouts:
-                    doc_frames = self.scan_layouts(doc)
+                    doc_frames = self.scan_layouts(doc, frame_type=frame_type, custom_block_name=custom_block_name)
                 else:
-                    doc_frames = self.scan_document(doc, frame_type=frame_type, custom_block_name=custom_block_name)
+                    doc_frames = self.scan_document(doc, frame_type=frame_type, custom_block_name=custom_block_name, space="model")
                     
                 for fr in doc_frames:
                     if not fr.dwg_path:
@@ -281,8 +358,9 @@ class DocumentScanner:
             except Exception:
                 pass
                 
-        # Сквозная сортировка всех рамок по номеру листа
-        all_frames.sort(key=frame_natural_sort_key)
+        # Сквозная сортировка всех рамок по номеру листа (для модели)
+        if not is_layouts:
+            all_frames.sort(key=frame_natural_sort_key)
         return all_frames
 
 

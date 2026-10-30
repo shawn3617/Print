@@ -54,6 +54,7 @@ class AutoCADConnector:
             
             # Пытаемся получить доступ к уже запущенному процессу AutoCAD
             self.app = win32com.client.GetActiveObject("AutoCAD.Application")
+            self._ensure_trusted_paths()
             try:
                 self.doc = _retry_busy(lambda: self.app.ActiveDocument, max_attempts=12, delay=0.25)
             except Exception:
@@ -66,6 +67,24 @@ class AutoCADConnector:
         except pythoncom.com_error as e:
             # Если AutoCAD не запущен, будет выброшено COM-исключение
             raise ConnectionError("Не удалось подключиться к AutoCAD. Убедитесь, что программа запущена.") from e
+
+    def _ensure_trusted_paths(self):
+        """
+        Добавляет папку lisp программы в доверенные пути AutoCAD (TRUSTEDPATHS),
+        чтобы исключить блокировку выполнения скомпилированных .fas при SECURELOAD > 0.
+        """
+        try:
+            from core.resource_utils import get_resource_path
+            lisp_dir = os.path.dirname(os.path.abspath(get_resource_path("core/lisp/spds_export.lsp")))
+            files_prefs = self.app.Preferences.Files
+            current_paths = files_prefs.TrustedPaths or ""
+            norm_lisp = os.path.normpath(lisp_dir).lower()
+            existing = [os.path.normpath(p.strip()).lower() for p in current_paths.split(";") if p.strip()]
+            if norm_lisp not in existing:
+                new_paths = (current_paths.rstrip(";") + ";" + lisp_dir) if current_paths else lisp_dir
+                files_prefs.TrustedPaths = new_paths
+        except Exception:
+            pass
             
     def get_active_document_name(self) -> str:
         """
@@ -435,9 +454,19 @@ class AutoCADConnector:
                 except Exception as e:
                     print(f"Предупреждение: не удалось переключиться на чертеж {frame.dwg_path}: {e}")
 
+        target_layout = getattr(frame, "layout_name", "Model") or "Model"
         if getattr(frame, "source_type", "") == "Layout":
-            self.activate_layout(frame.sheet_name)
+            self.activate_layout(frame.sheet_name or target_layout)
             return
+        elif target_layout.lower() != "model":
+            self.activate_layout(target_layout)
+        else:
+            try:
+                model_layout = self.doc.ModelSpace.Layout
+                if getattr(self.doc.ActiveLayout, "Name", "") != getattr(model_layout, "Name", "Model"):
+                    self.doc.ActiveLayout = model_layout
+            except Exception:
+                pass
 
         if zoom and frame.min_point and frame.max_point:
             self.zoom_window(frame.min_point, frame.max_point)

@@ -9,7 +9,6 @@ env/
 # ===== Сборка exe (PyInstaller, установщик) =====
 build/
 dist/
-installer/
 *.spec
 
 # ===== Редакторы =====

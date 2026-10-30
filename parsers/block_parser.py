@@ -4,7 +4,7 @@ import fnmatch
 from typing import List, Any
 from core.models import Frame, ALL_FORMATS, detect_paper_format
 from parsers.base_parser import BaseParser
-from core.resource_utils import get_resource_path
+from core.resource_utils import get_resource_path, get_lisp_path
 
 
 DEFAULT_BLOCK_NAMES = [
@@ -80,7 +80,7 @@ class BlockParser(BaseParser):
         self.building_attr_tags = [tag.upper() for tag in (building_attr_tags or DEFAULT_BUILDING_TAGS)]
 
         # Путь к LISP-экстрактору рамок-блоков
-        self.lisp_path = get_resource_path("core/lisp/block_export.lsp")
+        self.lisp_path = get_lisp_path("core/lisp/block_export.lsp")
 
     @staticmethod
     def _get_attr_value(attrs: dict, tags: List[str]) -> str:
@@ -179,6 +179,10 @@ class BlockParser(BaseParser):
 
         frames = []
         for fmt_item in formats:
+            layout_name = fmt_item.get("layout", "Model") or "Model"
+            is_model = layout_name.lower() == "model"
+            source_type = "Block" if is_model else "Block (Лист)"
+
             hdl = fmt_item.get("handle", "")
             b_name = fmt_item.get("block_name", "")
             sc = float(fmt_item.get("scale", 1.0))
@@ -190,10 +194,13 @@ class BlockParser(BaseParser):
             w = max_x - min_x
             h = max_y - min_y
 
-            # 2. Ищем штамп, геометрически попадающий внутрь этой рамки
-            margin = max(100.0, w * 0.02)
+            # 2. Ищем штамп, геометрически попадающий внутрь этой рамки и на том же листе
+            margin = max(100.0, w * 0.02) if is_model else max(10.0, w * 0.02)
             matched_stamp = None
             for st in stamps:
+                st_layout = st.get("layout", "Model") or "Model"
+                if st_layout.lower() != layout_name.lower():
+                    continue
                 sx1 = float(st.get("min_x", 0.0))
                 sy1 = float(st.get("min_y", 0.0))
                 sx2 = float(st.get("max_x", 0.0))
@@ -229,12 +236,13 @@ class BlockParser(BaseParser):
                 sheet_name=name,
                 min_point=(min_x, min_y, 0.0),
                 max_point=(max_x, max_y, 0.0),
-                source_type="Block",
+                source_type=source_type,
                 paper_format=fmt,
                 handle=hdl,
                 doc_code=doc_code,
                 object_name=object_name,
-                building_name=building_name
+                building_name=building_name,
+                layout_name=layout_name
             )
             frames.append(frame)
 
@@ -264,52 +272,74 @@ class BlockParser(BaseParser):
 
     def _find_frames_fallback_com(self, doc: Any) -> List[Frame]:
         items = []
+        spaces_to_scan = []
         try:
-            model_space = doc.ModelSpace
+            if hasattr(doc, "ModelSpace"):
+                spaces_to_scan.append(("Model", doc.ModelSpace))
         except Exception:
-            return []
+            pass
 
-        for i in range(model_space.Count):
-            try:
-                obj = model_space.Item(i)
-                if getattr(obj, 'EntityName', '') == 'AcDbBlockReference':
-                    block_name = ""
+        try:
+            if hasattr(doc, "Layouts"):
+                for i in range(doc.Layouts.Count):
+                    lyt = doc.Layouts.Item(i)
+                    if getattr(lyt, "ModelType", False) or lyt.Name.lower() == "model":
+                        continue
                     try:
-                        block_name = obj.EffectiveName
+                        spaces_to_scan.append((lyt.Name, lyt.Block))
                     except Exception:
-                        try:
-                            block_name = obj.Name
-                        except Exception:
-                            pass
+                        pass
+        except Exception:
+            pass
 
-                    matched = False
-                    for pattern in self.block_names:
-                        if fnmatch.fnmatch(block_name.lower(), pattern.lower()):
-                            matched = True
-                            break
-
-                    if matched:
-                        min_pt, max_pt = obj.GetBoundingBox()
-                        attrs = {}
-                        if obj.HasAttributes:
-                            for attr in obj.GetAttributes():
-                                attrs[attr.TagString.upper()] = attr.TextString.strip()
-
-                        blk_scale = getattr(obj, 'XScaleFactor', 1.0)
-                        items.append({
-                            "handle": getattr(obj, 'Handle', ''),
-                            "block_name": block_name,
-                            "sheet_number": "Unknown",
-                            "sheet_name": "Unknown",
-                            "scale": blk_scale,
-                            "min_x": min_pt[0],
-                            "min_y": min_pt[1],
-                            "max_x": max_pt[0],
-                            "max_y": max_pt[1],
-                            "attrs": attrs
-                        })
+        for lyt_name, space in spaces_to_scan:
+            try:
+                cnt = space.Count
             except Exception:
                 continue
+
+            for i in range(cnt):
+                try:
+                    obj = space.Item(i)
+                    if getattr(obj, 'EntityName', '') == 'AcDbBlockReference':
+                        block_name = ""
+                        try:
+                            block_name = obj.EffectiveName
+                        except Exception:
+                            try:
+                                block_name = obj.Name
+                            except Exception:
+                                pass
+
+                        matched = False
+                        for pattern in self.block_names:
+                            if fnmatch.fnmatch(block_name.lower(), pattern.lower()):
+                                matched = True
+                                break
+
+                        if matched:
+                            min_pt, max_pt = obj.GetBoundingBox()
+                            attrs = {}
+                            if obj.HasAttributes:
+                                for attr in obj.GetAttributes():
+                                    attrs[attr.TagString.upper()] = attr.TextString.strip()
+
+                            blk_scale = getattr(obj, 'XScaleFactor', 1.0)
+                            items.append({
+                                "handle": getattr(obj, 'Handle', ''),
+                                "layout": lyt_name,
+                                "block_name": block_name,
+                                "sheet_number": "Unknown",
+                                "sheet_name": "Unknown",
+                                "scale": blk_scale,
+                                "min_x": min_pt[0],
+                                "min_y": min_pt[1],
+                                "max_x": max_pt[0],
+                                "max_y": max_pt[1],
+                                "attrs": attrs
+                            })
+                except Exception:
+                    continue
 
         return self._convert_items_to_frames(items)
 
@@ -363,7 +393,8 @@ class BlockParser(BaseParser):
         """
         needs_enrichment = [
             f for f in frames
-            if f.sheet_number in ("Unknown", "") or f.sheet_name in ("Unknown", "")
+            if (f.sheet_number in ("Unknown", "") or f.sheet_name in ("Unknown", ""))
+            and getattr(f, "layout_name", "Model").lower() == "model"
         ]
         if not needs_enrichment or not doc:
             return frames

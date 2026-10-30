@@ -178,8 +178,11 @@
 
                 (if (not first) (write-line "  ," fp))
                 (setq first nil)
+                (setq layout-name (cdr (assoc 410 ed)))
+                (if (null layout-name) (setq layout-name "Model"))
                 (write-line "  {" fp)
                 (write-line (strcat "    \"handle\": \"" (sht-escape-json hdl) "\",") fp)
+                (write-line (strcat "    \"layout\": \"" (sht-escape-json layout-name) "\",") fp)
                 (write-line (strcat "    \"form\": \"" form "\",") fp)
                 (write-line (strcat "    \"sheet_number\": \"" (sht-escape-json sh-num) "\",") fp)
                 (write-line (strcat "    \"sheet_name\": \"" (sht-escape-json sh-name) "\",") fp)

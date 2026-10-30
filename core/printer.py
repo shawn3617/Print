@@ -294,7 +294,10 @@ class BatchPrinter:
         
         self._ensure_plotters()
         # Если есть рамки из Model Space, предварительно активируем ModelSpace
-        has_model_frames = any(getattr(f, "source_type", "") != "Layout" for f in frames)
+        has_model_frames = any(
+            getattr(f, "layout_name", "Model").lower() == "model" and getattr(f, "source_type", "") != "Layout"
+            for f in frames
+        )
         if has_model_frames:
             try:
                 def switch_init_model():
@@ -370,13 +373,20 @@ class BatchPrinter:
                     status = f"Печать листа {i + 1} из {len(frames)}: Лист {frame.sheet_number} ({safe_name})..."
                     progress_callback(i, total_steps, status)
                 
-                is_layout = getattr(frame, "source_type", "") == "Layout"
+                is_paper_space = (getattr(frame, "layout_name", "Model").lower() != "model") or (getattr(frame, "source_type", "") == "Layout")
                 
-                if is_layout:
+                if is_paper_space:
+                    if getattr(frame, "source_type", "") == "Layout":
+                        target_layout_name = frame.sheet_name
+                    else:
+                        target_layout_name = getattr(frame, "layout_name", "") or frame.sheet_name
                     try:
-                        cur_layout = self.doc.Layouts.Item(frame.sheet_name)
+                        cur_layout = self.doc.Layouts.Item(target_layout_name)
                     except Exception:
-                        cur_layout = self.doc.ActiveLayout
+                        try:
+                            cur_layout = self.doc.Layouts.Item(frame.sheet_name)
+                        except Exception:
+                            cur_layout = self.doc.ActiveLayout
                     
                     # 1. Активируем вкладку Layout с повторными попытками при занятости AutoCAD
                     def switch_layout_tab():
@@ -387,7 +397,7 @@ class BatchPrinter:
                     # Даем AutoCAD время на регенерацию Paper Space
                     time.sleep(0.4)
                     
-                    # 2. Настраиваем параметры листа Layout (для acLayout масштабирование и центрирование не меняются)
+                    # 2. Настраиваем параметры листа Layout
                     def setup_layout_params():
                         cur_layout.ConfigName = printer_name
                         cur_layout.StyleSheet = style_name
@@ -400,8 +410,51 @@ class BatchPrinter:
                                 cur_layout.CanonicalMediaName = media_name
                             except Exception:
                                 pass
-                                
-                        cur_layout.PlotType = 5  # acLayout
+
+                        has_window = (
+                            getattr(frame, "source_type", "") != "Layout"
+                            and frame.min_point
+                            and frame.max_point
+                            and (abs(frame.max_point[0] - frame.min_point[0]) > 1.0 or abs(frame.max_point[1] - frame.min_point[1]) > 1.0)
+                        )
+                        if has_window:
+                            # Определение ориентации
+                            is_paper_landscape = False
+                            try:
+                                local_name = cur_layout.GetLocaleMediaName(media_name)
+                                import re
+                                nums = [float(x) for x in re.findall(r'\d+(?:\.\d+)?', local_name)]
+                                dims = [n for n in nums if n >= 100]
+                                if len(dims) >= 2:
+                                    paper_w, paper_h = dims[-2], dims[-1]
+                                    is_paper_landscape = paper_w > paper_h
+                            except Exception:
+                                pass
+                            frame_w = abs(frame.max_point[0] - frame.min_point[0])
+                            frame_h = abs(frame.max_point[1] - frame.min_point[1])
+                            is_frame_landscape = frame_w > frame_h
+
+                            target_rot = 1 if is_frame_landscape != is_paper_landscape else 0
+                            if getattr(cur_layout, "PlotRotation", -1) != target_rot:
+                                cur_layout.PlotRotation = target_rot
+
+                            p1 = win32com.client.VARIANT(
+                                win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
+                                (frame.min_point[0], frame.min_point[1])
+                            )
+                            p2 = win32com.client.VARIANT(
+                                win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
+                                (frame.max_point[0], frame.max_point[1])
+                            )
+                            cur_layout.SetWindowToPlot(p1, p2)
+                            if getattr(cur_layout, "PlotType", -1) != 4:
+                                cur_layout.PlotType = 4  # acWindow
+                            if getattr(cur_layout, "StandardScale", -1) != 0:
+                                cur_layout.StandardScale = 0
+                            if not getattr(cur_layout, "CenterPlot", False):
+                                cur_layout.CenterPlot = True
+                        else:
+                            cur_layout.PlotType = 5  # acLayout
                     _retry_busy(setup_layout_params)
                 else:
                     # 1. Активируем вкладку Модель, только если в AutoCAD был активен лист Layout

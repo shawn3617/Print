@@ -33,13 +33,13 @@
 
 ;; Основная функция экспорта рамок-блоков
 (defun sht-export-blocks (filepath patterns-str sheet-tags-str title-tags-str / 
-                          ss i en ed obj bname eff-name hdl sc
+                          ss i en ed layout-name obj bname eff-name hdl sc
                           sh-num sh-name att-list tag-str val-str
                           mn mx min-pt max-pt r fp first first-att)
   (setq patterns-str (strcase patterns-str))
   (setq sheet-tags-str (strcase sheet-tags-str))
   (setq title-tags-str (strcase title-tags-str))
-  (setq ss (ssget "_X" '((0 . "INSERT") (410 . "Model"))))
+  (setq ss (ssget "_X" '((0 . "INSERT"))))
   (setq fp (open filepath "w"))
   (if fp
     (progn
@@ -50,8 +50,11 @@
           (setq i 0)
           (while (< i (sslength ss))
             (setq en (ssname ss i)
+                  ed (entget en)
+                  layout-name (cdr (assoc 410 ed))
                   obj (vlax-ename->vla-object en)
                   i (1+ i))
+            (if (null layout-name) (setq layout-name "Model"))
             
             ;; Получаем эффективное имя блока (для динамических блоков)
             (setq eff-name
@@ -104,6 +107,7 @@
                     
                     (write-line "  {" fp)
                     (write-line (strcat "    \"handle\": \"" (sht-blk-escape-json hdl) "\",") fp)
+                    (write-line (strcat "    \"layout\": \"" (sht-blk-escape-json layout-name) "\",") fp)
                     (write-line (strcat "    \"block_name\": \"" (sht-blk-escape-json eff-name) "\",") fp)
                     (write-line (strcat "    \"sheet_number\": \"" (sht-blk-escape-json sh-num) "\",") fp)
                     (write-line (strcat "    \"sheet_name\": \"" (sht-blk-escape-json sh-name) "\",") fp)

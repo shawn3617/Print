@@ -1035,16 +1035,21 @@ class PrintManagerUI(QMainWindow):
             self.connector.clear_highlight()
             
             is_layouts_mode = "Layout" in self.combo_source.currentText() or "Листы" in self.combo_source.currentText()
+            frame_type = self.combo_frame_type.currentData() if hasattr(self, "combo_frame_type") else "spds"
+            custom_block = self.edit_block_name.text() if hasattr(self, "edit_block_name") else ""
             
             if is_layouts_mode:
-                self.frames = self.scanner.scan_layouts(self.connector.doc)
-            else:
-                frame_type = self.combo_frame_type.currentData() if hasattr(self, "combo_frame_type") else "spds"
-                custom_block = self.edit_block_name.text() if hasattr(self, "edit_block_name") else ""
-                self.frames = self.scanner.scan_document(
+                self.frames = self.scanner.scan_layouts(
                     self.connector.doc,
                     frame_type=frame_type,
                     custom_block_name=custom_block
+                )
+            else:
+                self.frames = self.scanner.scan_document(
+                    self.connector.doc,
+                    frame_type=frame_type,
+                    custom_block_name=custom_block,
+                    space="model"
                 )
             
             # Обновляем таблицу
