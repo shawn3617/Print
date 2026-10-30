@@ -321,6 +321,104 @@ class BlockParser(BaseParser):
 
         return self._convert_items_to_frames(items)
 
+    @staticmethod
+    def _collect_model_texts(doc: Any) -> List[tuple]:
+        """
+        Быстро извлекает свободные надписи (TEXT и MTEXT) из пространства модели
+        через SelectionSet AutoCAD (занимает ~0.01 сек).
+        Возвращает: [((min_x + max_x)/2, (min_y + max_y)/2, cleaned_text), ...]
+        """
+        import pythoncom
+        import win32com.client
+        from parsers.polyline_parser import _clean_text
+
+        ss_name = "BLOCK_FREE_TEXTS_SS"
+        try:
+            try:
+                doc.SelectionSets.Item(ss_name).Delete()
+            except Exception:
+                pass
+            ss = doc.SelectionSets.Add(ss_name)
+            ftype = win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_I2, [0, 410])
+            fdata = win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_VARIANT, ["TEXT,MTEXT", "Model"])
+            no_arg = getattr(pythoncom, "ArgNotFound", pythoncom.Missing)
+            ss.Select(5, no_arg, no_arg, ftype, fdata)
+
+            texts = []
+            for i in range(ss.Count):
+                try:
+                    t = ss.Item(i)
+                    val = _clean_text(getattr(t, "TextString", ""))
+                    if val:
+                        mn, mx = t.GetBoundingBox()
+                        texts.append(((mn[0] + mx[0]) / 2.0, (mn[1] + mx[1]) / 2.0, val))
+                except Exception:
+                    continue
+            return texts
+        except Exception:
+            return []
+        finally:
+            try:
+                ss.Delete()
+            except Exception:
+                pass
+
+    def _enrich_frames_with_free_texts(self, frames: List[Frame], doc: Any) -> List[Frame]:
+        """
+        Если блок рамки или вложенного штампа не имеет заполненных атрибутов
+        (номер/название листа Unknown или пусто, шифр пуст), сканирует свободные
+        надписи модели в зоне штампа (Форма 3/4/6 по ГОСТ Р 21.1101).
+        """
+        needs_enrichment = [
+            f for f in frames
+            if f.sheet_number in ("Unknown", "") or f.sheet_name in ("Unknown", "") or not f.doc_code
+        ]
+        if not needs_enrichment or not doc:
+            return frames
+
+        texts = self._collect_model_texts(doc)
+        if not texts:
+            return frames
+
+        from parsers.polyline_parser import _read_stamp
+
+        for frame in needs_enrichment:
+            w = abs(frame.max_point[0] - frame.min_point[0])
+            h = abs(frame.max_point[1] - frame.min_point[1])
+            sc = 1.0
+            if frame.paper_format in ALL_FORMATS:
+                gw, gh = ALL_FORMATS[frame.paper_format]
+                sc_x = w / max(gw, gh) if w > h else w / min(gw, gh)
+                if sc_x > 0.1:
+                    sc = round(sc_x) if abs(sc_x - round(sc_x)) < 0.05 else sc_x
+
+            # Пробуем 2 варианта привязки правого нижнего угла штампа:
+            # 1) Внешняя граница формата с полями ГОСТ 5 мм: (max_x - 5*sc, min_y + 5*sc)
+            # 2) Внутренняя граница листа (без полей): (max_x, min_y)
+            anchors = [
+                (frame.max_point[0] - 5.0 * sc, frame.min_point[1] + 5.0 * sc),
+                (frame.max_point[0], frame.min_point[1])
+            ]
+            for ax, ay in anchors:
+                num, name, code, obj, bld, _ = _read_stamp((ax, ay), sc, texts)
+                if num and num != "Unknown":
+                    if frame.sheet_number in ("Unknown", ""):
+                        frame.sheet_number = num
+                if name and name != "Unknown":
+                    if frame.sheet_name in ("Unknown", ""):
+                        frame.sheet_name = name
+                if code and not frame.doc_code:
+                    frame.doc_code = code
+                if obj and not frame.object_name:
+                    frame.object_name = obj
+                if bld and not frame.building_name:
+                    frame.building_name = bld
+
+                if frame.sheet_number not in ("Unknown", "") or (frame.sheet_name and frame.sheet_name != "Unknown"):
+                    break
+
+        return frames
+
     def find_frames(self, doc: Any) -> List[Frame]:
         # 1. Быстрая проверка наличия определений блоков в таблице Blocks (0.001 сек)
         if not self._has_block_definitions(doc):
@@ -328,8 +426,11 @@ class BlockParser(BaseParser):
 
         # 2. Быстрый экспорт через LISP-мост
         try:
-            return self._find_frames_via_lisp(doc)
+            frames = self._find_frames_via_lisp(doc)
         except Exception as e:
             print(f"Предупреждение: LISP поиск блоков не сработал ({e}), запуск резервного метода...")
-            return self._find_frames_fallback_com(doc)
+            frames = self._find_frames_fallback_com(doc)
+
+        # 3. Геометрическое дообогащение текстами россыпью для блоков без атрибутов
+        return self._enrich_frames_with_free_texts(frames, doc)
 

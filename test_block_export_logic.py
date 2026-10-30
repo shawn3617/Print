@@ -270,6 +270,53 @@ class TestBlockExportLogic(unittest.TestCase):
         self.assertEqual(f.object_name, "123123")
         self.assertEqual(f.building_name, "333")
 
+    def test_enrich_frames_with_free_texts(self):
+        # Рамка блока без атрибутов (как Рамка1 на чертеже моста Бобровый)
+        raw_items = [
+            {
+                "handle": "B6",
+                "block_name": "Рамка1",
+                "sheet_number": "Unknown",
+                "sheet_name": "Unknown",
+                "scale": 1.0,
+                "min_x": 205.8,
+                "min_y": 233.4,
+                "max_x": 799.8,
+                "max_y": 653.4,
+                "attrs": {}
+            }
+        ]
+
+        parser = BlockParser()
+        frames = parser._convert_items_to_frames(raw_items)
+        self.assertEqual(frames[0].sheet_number, "Unknown")
+        self.assertEqual(frames[0].sheet_name, "")
+
+        # Правый нижний угол штампа с отступом 5 мм: (799.8 - 5.0, 233.4 + 5.0) = (794.8, 238.4)
+        ax, ay = 794.8, 238.4
+        mock_texts = [
+            (ax - 27.6, ay + 20.1, "03"),
+            (ax - 85.0, ay + 7.5, "Ведомость марок"),
+            (ax - 60.0, ay + 50.0, "ПБО-1/ПИР-РД-М-КМ1"),
+            (ax - 60.0, ay + 37.5, "Пешеходный мост Бобровый"),
+            (ax - 85.0, ay + 22.5, "Вантовое пролетное строение"),
+            (ax - 179.2, ay + 27.1, "Разраб."),
+            (ax - 158.9, ay + 27.3, "Кузьмичев"),
+            (ax - 42.5, ay + 20.0, "Р"),
+        ]
+
+        mock_doc = MagicMock()
+        parser._collect_model_texts = lambda doc: mock_texts
+
+        enriched = parser._enrich_frames_with_free_texts(frames, mock_doc)
+        f = enriched[0]
+        self.assertEqual(f.sheet_number, "03")
+        self.assertEqual(f.sheet_name, "Ведомость марок")
+        self.assertEqual(f.doc_code, "ПБО-1/ПИР-РД-М-КМ1")
+        self.assertEqual(f.object_name, "Пешеходный мост Бобровый")
+        self.assertEqual(f.building_name, "Вантовое пролетное строение")
+        self.assertEqual(f.paper_format, "A2")
+
 
 if __name__ == "__main__":
     unittest.main()
