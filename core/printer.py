@@ -111,9 +111,9 @@ class BatchPrinter:
         try:
             layout = _retry_busy(lambda: self.doc.ModelSpace.Layout)
             self._apply_printer(layout, printer_name)
-            names = layout.GetCanonicalMediaNames()
+            names = _retry_busy(layout.GetCanonicalMediaNames)
             for sys_name in names:
-                local_name = layout.GetLocaleMediaName(sys_name)
+                local_name = _retry_busy(lambda s=sys_name: layout.GetLocaleMediaName(s))
                 
                 # Извлекаем все числа из названия формата
                 nums = [float(x) for x in re.findall(r'\d+(?:\.\d+)?', local_name)]
@@ -293,13 +293,21 @@ class BatchPrinter:
             print(f"Предупреждение: не удалось проверить PC3 настройки: {e}")
         
         self._ensure_plotters()
-        # Строим словарь {формат -> canonical_name} из доступных форматов принтера
-        media_map = self._build_media_map(printer_name)
-        
-        # Если есть рамки из Model Space, предварительно настраиваем ModelSpace.Layout
+        # Если есть рамки из Model Space, предварительно активируем ModelSpace
         has_model_frames = any(getattr(f, "source_type", "") != "Layout" for f in frames)
         if has_model_frames:
+            try:
+                def switch_init_model():
+                    model_layout = self.doc.ModelSpace.Layout
+                    if getattr(self.doc.ActiveLayout, "Name", "") != getattr(model_layout, "Name", "Model"):
+                        self.doc.ActiveLayout = model_layout
+                _retry_busy(switch_init_model)
+            except Exception:
+                pass
             self._setup_model_layout(printer_name, style_name)
+
+        # Строим словарь {формат -> canonical_name} из доступных форматов принтера
+        media_map = self._build_media_map(printer_name)
         
         # Отключаем фоновую печать
         try:
@@ -363,6 +371,7 @@ class BatchPrinter:
                     progress_callback(i, total_steps, status)
                 
                 is_layout = getattr(frame, "source_type", "") == "Layout"
+                created_view_name = None
                 
                 if is_layout:
                     try:
@@ -396,9 +405,23 @@ class BatchPrinter:
                         cur_layout.PlotType = 5  # acLayout
                     _retry_busy(setup_layout_params)
                 else:
-                    # Окно печати по рамке в модели (повторяем целиком, если AutoCAD занят)
+                    # 1. Активируем вкладку Модель, если в AutoCAD был активен лист Layout
+                    def switch_model_tab():
+                        model_layout = self.doc.ModelSpace.Layout
+                        if getattr(self.doc.ActiveLayout, "Name", "") != getattr(model_layout, "Name", "Model"):
+                            self.doc.ActiveLayout = model_layout
+                    _retry_busy(switch_model_tab)
+                    time.sleep(0.3)
+
+                    # 2. Настраиваем параметры печати рамки в пространстве модели
                     def setup_model_params():
+                        nonlocal created_view_name
                         cur_layout = self.doc.ModelSpace.Layout
+                        cur_layout.ConfigName = printer_name
+                        cur_layout.StyleSheet = style_name
+                        cur_layout.PlotWithPlotStyles = True
+                        cur_layout.PlotWithLineweights = True
+
                         # Автоподбор формата бумаги по формату рамки
                         media_name = media_map.get(frame.paper_format)
                         if not media_name:
@@ -436,16 +459,41 @@ class BatchPrinter:
                         else:
                             cur_layout.PlotRotation = 0  # ac0degrees
                     
-                        p1 = win32com.client.VARIANT(
-                            win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
-                            (frame.min_point[0], frame.min_point[1])
-                        )
-                        p2 = win32com.client.VARIANT(
-                            win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
-                            (frame.max_point[0], frame.max_point[1])
-                        )
-                        cur_layout.SetWindowToPlot(p1, p2)
-                        cur_layout.PlotType = 4  # acWindow
+                        # Печать через именованный View (acView = 3) полностью решает
+                        # проблему со сдвигом окна в чертежах с отличным от нуля TARGET/DCS
+                        # (геоподоснова, мосты, МСК-координаты), из-за которого acWindow давал белый лист.
+                        view_name = f"_SHT_PLOT_VIEW_{i}"
+                        try:
+                            self.doc.Views.Item(view_name).Delete()
+                        except Exception:
+                            pass
+                        try:
+                            view = self.doc.Views.Add(view_name)
+                            cx = (frame.min_point[0] + frame.max_point[0]) / 2.0
+                            cy = (frame.min_point[1] + frame.max_point[1]) / 2.0
+                            center_pt = win32com.client.VARIANT(
+                                win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8,
+                                (cx, cy)
+                            )
+                            view.Center = center_pt
+                            view.Width = frame_w
+                            view.Height = frame_h
+                            cur_layout.ViewToPlot = view_name
+                            cur_layout.PlotType = 3  # acView
+                            created_view_name = view_name
+                        except Exception:
+                            # Резервный вариант acWindow при отсутствии поддержки Views
+                            p1 = win32com.client.VARIANT(
+                                win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
+                                (frame.min_point[0], frame.min_point[1])
+                            )
+                            p2 = win32com.client.VARIANT(
+                                win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
+                                (frame.max_point[0], frame.max_point[1])
+                            )
+                            cur_layout.SetWindowToPlot(p1, p2)
+                            cur_layout.PlotType = 4  # acWindow
+
                         cur_layout.StandardScale = 0
                         cur_layout.CenterPlot = True
                 
@@ -470,6 +518,14 @@ class BatchPrinter:
                 def do_plot():
                     self.doc.Plot.PlotToFile(filepath, printer_name)
                 _retry_busy(do_plot)
+                
+                # Удаляем временный View печати после завершения листа
+                if created_view_name:
+                    try:
+                        self.doc.Views.Item(created_view_name).Delete()
+                    except Exception:
+                        pass
+                created_view_name = None
                 
                 if is_cancelled and is_cancelled():
                     raise PrintCancelledError("Печать отменена пользователем.")
@@ -555,6 +611,18 @@ class BatchPrinter:
                     self.connector.activate_document(initial_active_doc)
                 except Exception:
                     pass
+
+            # Очищаем временные View печати, если остались
+            try:
+                if self._doc_alive(self.doc):
+                    for v in list(self.doc.Views):
+                        if getattr(v, "Name", "").startswith("_SHT_PLOT_VIEW_"):
+                            try:
+                                v.Delete()
+                            except Exception:
+                                pass
+            except Exception:
+                pass
 
             # Удаляем всю временную папку целиком
             if temp_dir and os.path.exists(temp_dir):

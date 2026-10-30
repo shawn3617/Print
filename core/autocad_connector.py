@@ -37,9 +37,12 @@ class AutoCADConnector:
         Возвращает True в случае успеха, иначе генерирует исключение.
         """
         try:
-            # Гарантируем подключение к интерактивному рабочему столу Windows
+            # Гарантируем подключение к интерактивной оконной станции и рабочему столу Windows
             try:
                 import ctypes
+                hwinsta = ctypes.windll.user32.OpenWindowStationW("WinSta0", False, 0x037F)
+                if hwinsta:
+                    ctypes.windll.user32.SetProcessWindowStation(hwinsta)
                 hDesk = ctypes.windll.user32.OpenDesktopW("Default", 0, False, 0x01FF)
                 if hDesk:
                     ctypes.windll.user32.SetThreadDesktop(hDesk)
