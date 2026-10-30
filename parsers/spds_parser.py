@@ -197,7 +197,10 @@ class SPDSParser(BaseParser):
     def find_frames(self, doc: Any) -> List[Frame]:
         # Приоритетно быстрый экспорт через LISP-скрипт
         try:
-            return self._find_frames_via_lisp(doc)
+            frames = self._find_frames_via_lisp(doc)
         except Exception as e:
             print(f"Предупреждение: LISP скан СПДС не сработал ({e}), пробуем перебор COM...")
-            return self._find_frames_fallback_com(doc)
+            frames = self._find_frames_fallback_com(doc)
+
+        from parsers.block_parser import BlockParser
+        return BlockParser()._enrich_frames_with_free_texts(frames, doc)

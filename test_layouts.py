@@ -349,6 +349,60 @@ class TestLayoutsSupport(unittest.TestCase):
             mock_zoom.assert_called_once_with((0.0, 0.0, 0.0), (420.0, 297.0, 0.0))
             mock_highlight.assert_called_once_with(handle="H_BLK_1", object_id=505)
 
+    def test_paper_space_block_enriched_with_free_texts(self):
+        from parsers.block_parser import BlockParser
+        parser = BlockParser()
+
+        # Рамка блока на листе "Лист 1" без заполненных атрибутов
+        frame = Frame(
+            object_id=101,
+            sheet_number="Unknown",
+            sheet_name="Unknown",
+            min_point=(0.0, 0.0, 0.0),
+            max_point=(420.0, 297.0, 0.0),
+            source_type="Block (Лист)",
+            paper_format="A3",
+            layout_name="Лист 1"
+        )
+
+        # Свободные надписи на Листе 1 в зоне штампа (A3: правый нижний угол 420, 0)
+        # Отступ 5 мм: угол (415, 5)
+        # Наименование листа: x = 415 - 85 = 330, y = 5 + 10 = 15
+        # Номер листа: x = 415 - 28 = 387, y = 5 + 20 = 25
+        mock_texts = [
+            (387.0, 25.0, "12", "12", (385.0, 23.0, 389.0, 27.0)),
+            (330.0, 15.0, "План на отм. 0.000", "План на отм. 0.000", (300.0, 10.0, 360.0, 20.0)),
+        ]
+
+        parser._enrich_single_frame(frame, mock_texts)
+        self.assertEqual(frame.sheet_number, "12")
+        self.assertEqual(frame.sheet_name, "План на отм. 0.000")
+
+    def test_paper_space_block_multiline_mtext_title(self):
+        from parsers.block_parser import BlockParser
+        parser = BlockParser()
+
+        frame = Frame(
+            object_id=102,
+            sheet_number="5", # номер уже известен из атрибута блока
+            sheet_name="Unknown",
+            min_point=(0.0, 0.0, 0.0),
+            max_point=(420.0, 297.0, 0.0),
+            source_type="Block (Лист)",
+            paper_format="A3",
+            layout_name="Лист 2"
+        )
+
+        # Многострочный MTEXT со штампом в средней колонке (x = 335, y = 20)
+        raw_mtext = "Многоквартирный жилой дом\\PСхема расположения колонн"
+        mock_texts = [
+            (335.0, 20.0, "Многоквартирный жилой дом Схема расположения колонн", raw_mtext, (300.0, 10.0, 370.0, 30.0)),
+        ]
+
+        parser._enrich_single_frame(frame, mock_texts)
+        self.assertEqual(frame.sheet_number, "5")
+        self.assertEqual(frame.sheet_name, "Схема расположения колонн")
+
 
 if __name__ == "__main__":
     unittest.main()

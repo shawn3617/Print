@@ -230,6 +230,18 @@ def _is_title_page(local: List[Tuple[float, float, str]]) -> bool:
     if not in_stamp:
         return True
 
+    # Если среди текстов есть заголовок чертежа (План, Разрез, Схема...) или номер листа — это точно не титул!
+    title_keywords = (
+        "план", "разрез", "фасад", "схема", "узел", "узлы", "сечение", "сечения",
+        "спецификаци", "ведомост", "общие данные", "опалубк", "армирован"
+    )
+    for t in in_stamp:
+        val_lower = t[2].strip().lower()
+        if any(kw in val_lower for kw in title_keywords):
+            return False
+        if re.match(r'^\d+[а-яА-Яa-zA-Z]?(?:[-.]\d+)?$', val_lower):
+            return False
+
     # Если в зоне штампа 3 и более текстов — это заполненная основная надпись, а не титул
     if len(in_stamp) >= 3:
         return False
@@ -256,8 +268,15 @@ def _detect_stamp_form(local: List[Tuple[float, float, str]]) -> int:
     - форма 6: последующие листы (штамп высотой 15 мм, нет надписей выше Y=18)
     - форма 3: основной комплект рабочих чертежей (по умолчанию)
     """
-    # Если выше 18 мм вообще нет текстов — это форма 6 (малый штамп 15 мм)
-    if not any(t[1] > 18.0 for t in local):
+    # Если есть описательный заголовок листа (План, Разрез, Схема...) — это точно не форма 6
+    title_keywords = (
+        "план", "разрез", "фасад", "схема", "узел", "узлы", "сечение", "сечения",
+        "спецификаци", "ведомост", "общие данные", "опалубк", "армирован"
+    )
+    has_title = any(any(kw in t[2].lower() for kw in title_keywords) or len(t[2].strip()) > 8 for t in local)
+
+    # Если выше 18 мм вообще нет текстов и нет заголовков листа — это форма 6 (малый штамп 15 мм)
+    if not has_title and not any(t[1] > 18.0 for t in local):
         return 6
 
     # Форма 4: есть графа «Масса» или «Масштаб» справа (X > -45)
@@ -330,9 +349,22 @@ def _read_stamp(anchor, s, texts):
     else:
         name = ""
 
+    # Если в графе наименования пусто, но в building_name или object_name попало наименование чертежа
+    title_keywords = (
+        "план", "разрез", "фасад", "схема", "узел", "узлы", "сечение", "сечения",
+        "спецификаци", "ведомост", "общие данные", "опалубк", "армирован"
+    )
+    if not name or name == "Unknown":
+        if building_name and any(kw in building_name.lower() for kw in title_keywords):
+            name = building_name
+            building_name = ""
+        elif object_name and any(kw in object_name.lower() for kw in title_keywords):
+            name = object_name
+            object_name = ""
+
     # Для формы 6 наименование листа по ГОСТ отсутствует — оставляем пустым, не 'Unknown'
-    if form == 6:
-        final_name = name
+    if form == 6 and not name:
+        final_name = ""
     else:
         final_name = name or "Unknown"
 
