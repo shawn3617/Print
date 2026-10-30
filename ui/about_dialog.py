@@ -168,8 +168,13 @@ class AboutDialog(QDialog):
         lbl_lic.setStyleSheet(f"font-size: 10px; color: {text_muted};")
         layout.addWidget(lbl_lic)
 
-        # 6. Кнопка закрытия
+        # 6. Кнопки обновления и закрытия
         btn_layout = QHBoxLayout()
+        self.btn_check_update = QPushButton("🔄 Проверить обновления")
+        self.btn_check_update.setProperty("cssClass", "btn_tool")
+        self.btn_check_update.clicked.connect(self.on_check_updates_clicked)
+        btn_layout.addWidget(self.btn_check_update)
+
         btn_layout.addStretch()
         btn_close = QPushButton("Закрыть")
         btn_close.setProperty("cssClass", "btn_tool")
@@ -177,6 +182,32 @@ class AboutDialog(QDialog):
         btn_close.clicked.connect(self.accept)
         btn_layout.addWidget(btn_close)
         layout.addLayout(btn_layout)
+
+    def on_check_updates_clicked(self):
+        from PySide6.QtWidgets import QMessageBox
+        self.btn_check_update.setEnabled(False)
+        self.btn_check_update.setText("Проверка...")
+        QApplication.processEvents()
+
+        try:
+            from core.updater import check_for_updates
+            from ui.update_dialog import UpdateDialog
+            update_info = check_for_updates(current_version=APP_VERSION, timeout=5.0)
+        except Exception:
+            update_info = None
+
+        self.btn_check_update.setEnabled(True)
+        self.btn_check_update.setText("🔄 Проверить обновления")
+
+        if update_info:
+            dlg = UpdateDialog(update_info, APP_VERSION, self.current_theme_id, parent=self)
+            dlg.exec()
+        else:
+            QMessageBox.information(
+                self,
+                "Проверка обновлений",
+                f"У вас установлена самая актуальная версия {APP_SUBTITLE} (v{APP_VERSION})."
+            )
 
     def _build_display_diagnostics(self) -> str:
         acad_status = "Не подключено"

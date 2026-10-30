@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QFileDialog, QAbstractItemView, QDialog, QProgressBar,
     QLineEdit, QSizePolicy, QListView, QFrame, QMenu
 )
-from PySide6.QtCore import Qt, Signal, QMimeData
+from PySide6.QtCore import Qt, Signal, QMimeData, QTimer
 from PySide6.QtGui import QDrag, QAction, QGuiApplication, QShortcut, QKeySequence, QIcon
 
 from core.autocad_connector import AutoCADConnector
@@ -209,6 +209,8 @@ class PrintManagerUI(QMainWindow):
         self.apply_initial_config()
         self.refresh_document_status()
         self._is_loading_config = False
+        self.available_update = None
+        QTimer.singleShot(2500, self.start_background_update_check)
 
     def setup_theme(self, theme_id: str = "dark_catppuccin"):
         if theme_id not in THEMES:
@@ -297,6 +299,25 @@ class PrintManagerUI(QMainWindow):
         self.btn_about.setToolTip("Информация о программе, версии и системе")
         self.btn_about.clicked.connect(self.show_about_dialog)
         batch_bar.addWidget(self.btn_about)
+
+        self.btn_update_alert = QPushButton("✨ Обновление")
+        self.btn_update_alert.setObjectName("btn_update_alert")
+        self.btn_update_alert.setToolTip("Нажмите, чтобы посмотреть список изменений и обновить программу")
+        self.btn_update_alert.setStyleSheet("""
+            QPushButton#btn_update_alert {
+                background-color: #a6e3a1;
+                color: #11111b;
+                font-weight: bold;
+                border-radius: 6px;
+                padding: 5px 12px;
+            }
+            QPushButton#btn_update_alert:hover {
+                background-color: #94e2d5;
+            }
+        """)
+        self.btn_update_alert.setVisible(False)
+        self.btn_update_alert.clicked.connect(self.show_update_dialog)
+        batch_bar.addWidget(self.btn_update_alert)
 
         left_layout.addLayout(batch_bar)
 
@@ -576,6 +597,50 @@ class PrintManagerUI(QMainWindow):
             parent=self
         )
         dlg.exec()
+
+    def show_update_dialog(self):
+        """Открывает окно с описанием и скачиванием доступного обновления."""
+        if not getattr(self, "available_update", None):
+            return
+        from ui.update_dialog import UpdateDialog
+        dlg = UpdateDialog(
+            update_info=self.available_update,
+            current_version=APP_VERSION,
+            current_theme_id=getattr(self, "current_theme", "dark_catppuccin"),
+            parent=self
+        )
+        dlg.exec()
+
+    def start_background_update_check(self):
+        """Запускает фоновую ненавязчивую проверку обновлений при старте приложения."""
+        import time
+        import threading
+
+        # Проверяем не чаще одного раза в 4 часа
+        last_check = float(self.config_manager.get("last_update_check", 0) or 0)
+        now = time.time()
+        if now - last_check < 4 * 3600:
+            return
+
+        def _bg_check():
+            try:
+                from core.updater import check_for_updates
+                info = check_for_updates(current_version=APP_VERSION, timeout=4.0)
+                self.config_manager.set("last_update_check", now)
+                self.config_manager.save()
+                if info:
+                    QTimer.singleShot(0, lambda: self.on_update_found(info))
+            except Exception:
+                pass
+
+        t = threading.Thread(target=_bg_check, daemon=True)
+        t.start()
+
+    def on_update_found(self, update_info):
+        """Вызывается в основном потоке при обнаружении новой версии."""
+        self.available_update = update_info
+        self.btn_update_alert.setText(f"✨ Доступно v{update_info.version}")
+        self.btn_update_alert.setVisible(True)
 
     def apply_initial_config(self):
         """Применяет сохраненные настройки из config.json к элементам интерфейса."""
