@@ -25,7 +25,7 @@ from core.exporter import SheetExporter
 from core.resource_utils import get_resource_path
 from ui.themes import THEMES, build_theme_qss, get_theme_status_colors, apply_title_bar_theme
 from ui.help_dialog import HelpDialog
-from ui.about_dialog import AboutDialog
+from ui.about_dialog import AboutDialog, APP_VERSION
 
 
 class ReorderableTableWidget(QTableWidget):
@@ -186,7 +186,7 @@ class PrintProgressDialog(QDialog):
 class PrintManagerUI(QMainWindow):
     def __init__(self, config_manager=None):
         super().__init__()
-        self.setWindowTitle("Smart Batch Print - AutoCAD")
+        self.setWindowTitle(f"PrintPDF v{APP_VERSION} — AutoCAD Batch PDF Plotter")
         icon_path = get_resource_path("autocad_to_pdf_icon.ico")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))

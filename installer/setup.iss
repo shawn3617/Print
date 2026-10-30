@@ -2,7 +2,7 @@
 ; Позволяет устанавливать программу без прав администратора (в AppData\Local\Programs\PrintPDF)
 
 #define MyAppName "PrintPDF"
-#define MyAppVersion "1.2.0"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "PrintPDF Team"
 #define MyAppExeName "PrintPDF.exe"
 #define MyAppIcon "..\autocad_to_pdf_icon.ico"

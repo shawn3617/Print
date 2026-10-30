@@ -1,13 +1,14 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul
 cd /d "%~dp0"
 call .venv\Scripts\activate
 
 REM Режим окна: --windowed (чистый релиз без консоли) или --console (с консолью для отладки)
 set WINDOW_MODE=--windowed
+set APP_VER=1.3.0
 
 echo ========================================================
-echo Сборка релизного дистрибутива PrintPDF v1.2.0
+echo Сборка релизного дистрибутива PrintPDF v%APP_VER%
 echo ========================================================
 
 REM Поиск компилятора Inno Setup 6 (ISCC.exe)
@@ -73,9 +74,9 @@ echo.
 echo ========================================================
 echo Шаг 3/4: Создание Portable ZIP-архива для коллег
 echo ========================================================
-python -c "import shutil; shutil.make_archive('dist/PrintPDF_v1.2.0_Portable', 'zip', 'dist', 'PrintPDF')"
+python -c "import shutil; shutil.make_archive('dist/PrintPDF_v%APP_VER%_Portable', 'zip', 'dist', 'PrintPDF')"
 if %ERRORLEVEL% EQU 0 (
-  echo [OK] Создан портативный архив: dist\PrintPDF_v1.2.0_Portable.zip
+  echo [OK] Создан портативный архив: dist\PrintPDF_v%APP_VER%_Portable.zip
 ) else (
   echo [ПРЕДУПРЕЖДЕНИЕ] Не удалось создать ZIP-архив.
 )
@@ -99,8 +100,8 @@ echo.
 echo ========================================================
 echo [УСПЕХ] Полный цикл сборки успешно завершен!
 echo.
-echo 1. Установочный пакет: dist\PrintPDF_Setup_v1.2.0.exe
-echo 2. Портативный ZIP:    dist\PrintPDF_v1.2.0_Portable.zip
+echo 1. Установочный пакет: dist\PrintPDF_Setup_v%APP_VER%.exe
+echo 2. Портативный ZIP:    dist\PrintPDF_v%APP_VER%_Portable.zip
 echo 3. Портативная папка:  dist\PrintPDF\
 echo ========================================================
 goto END
@@ -108,7 +109,7 @@ goto END
 :NO_ISCC
 echo [ПРЕДУПРЕЖДЕНИЕ] Компилятор Inno Setup не найден. Создание инсталлятора пропущено.
 echo.
-echo 1. Портативный ZIP:   dist\PrintPDF_v1.2.0_Portable.zip
+echo 1. Портативный ZIP:   dist\PrintPDF_v%APP_VER%_Portable.zip
 echo 2. Портативная папка: dist\PrintPDF\
 
 :END

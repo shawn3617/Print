@@ -19,7 +19,7 @@ from ui.themes import THEMES, build_theme_qss, apply_title_bar_theme
 
 APP_NAME = "AutoCAD Batch PDF Plotter"
 APP_SUBTITLE = "PrintPDF"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 APP_RELEASE_DATE = "30 октября 2026"
 
 
