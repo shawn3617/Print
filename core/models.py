@@ -10,16 +10,45 @@ GOST_FORMATS = {
     "A0": (1189, 841),
 }
 
-# Расширенные форматы ГОСТ 2.301-68 (AxN: короткая_сторона * N × длинная_сторона)
-GOST_EXTENDED = {}
+# Дополнительные форматы по ГОСТ 2.301-68 (Таблица 2)
+# Точные стандартные размеры в мм (длинная сторона x короткая сторона)
+GOST_EXTENDED = {
+    # Кратные A4 (297 x ...)
+    "A4x3": (630, 297),
+    "A4x4": (841, 297),
+    "A4x5": (1051, 297),
+    "A4x6": (1261, 297),
+    "A4x7": (1471, 297),
+    "A4x8": (1682, 297),
+    "A4x9": (1892, 297),
+    # Кратные A3 (420 x ...)
+    "A3x3": (891, 420),
+    "A3x4": (1189, 420),
+    "A3x5": (1486, 420),
+    "A3x6": (1783, 420),
+    "A3x7": (2080, 420),
+    # Кратные A2 (594 x ...)
+    "A2x3": (1261, 594),
+    "A2x4": (1682, 594),
+    "A2x5": (2102, 594),
+    # Кратные A1 (841 x ...)
+    "A1x3": (1783, 841),
+    "A1x4": (2378, 841),
+    # Кратные A0 (1189 x ...)
+    "A0x2": (1682, 1189),
+    "A0x3": (2523, 1189),
+}
+
+# Дополняем произвольными кратными до x9 по формуле, если какого-то нет в таблице 2
 for _base_name, (_fw, _fh) in GOST_FORMATS.items():
     _short = min(_fw, _fh)
     _long = max(_fw, _fh)
-    for _mult in range(3, 10):
+    for _mult in range(2, 10):
         _ext_name = f"{_base_name}x{_mult}"
-        _ext_w = _short * _mult
-        _ext_h = _long
-        GOST_EXTENDED[_ext_name] = (max(_ext_w, _ext_h), min(_ext_w, _ext_h))
+        if _ext_name not in GOST_EXTENDED and not (_base_name == "A0" and _mult == 1):
+            _ext_w = _short * _mult
+            _ext_h = _long
+            GOST_EXTENDED[_ext_name] = (max(_ext_w, _ext_h), min(_ext_w, _ext_h))
 
 # Объединяем все форматы
 ALL_FORMATS = {**GOST_FORMATS, **GOST_EXTENDED}

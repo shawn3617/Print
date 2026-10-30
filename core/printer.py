@@ -121,19 +121,20 @@ class BatchPrinter:
                 
                 matched_fmt = None
                 
-                # Вариант 1: Размеры указаны прямо в имени (например, 1485 x 420)
+                # Вариант 1: Размеры указаны прямо в имени (например, 1682 x 594 или 1485 x 420)
                 if len(dims) >= 2:
                     pw, ph = max(dims[-2:]), min(dims[-2:])
                     for fmt, (fw, fh) in ALL_FORMATS.items():
-                        if abs(pw - max(fw, fh)) < 2 and abs(ph - min(fw, fh)) < 2:
+                        if abs(pw - max(fw, fh)) <= 4.0 and abs(ph - min(fw, fh)) <= 4.0:
                             matched_fmt = fmt
                             break
                             
-                # Вариант 2: Имя формата просто содержит название ГОСТ (например, "A3x5")
+                # Вариант 2: Имя формата содержит название ГОСТ (например, "A2x4" или "A3x5")
+                # Сортируем по убыванию длины имени, чтобы A2x4 находился раньше A2
                 if not matched_fmt:
-                    for fmt in ALL_FORMATS.keys():
-                        # Ищем точное совпадение (например "A3x5" или "A2")
-                        if re.search(r'\b' + re.escape(fmt) + r'\b', local_name, re.IGNORECASE):
+                    for fmt in sorted(ALL_FORMATS.keys(), key=len, reverse=True):
+                        fmt_regex = re.escape(fmt).replace('A', '[AAАа]').replace('x', '[xXхХ]')
+                        if re.search(r'\b' + fmt_regex + r'\b', local_name, re.IGNORECASE):
                             matched_fmt = fmt
                             break
                             

@@ -16,6 +16,9 @@ import os
 import glob
 import shutil
 import filecmp
+import zlib
+import struct
+import re
 
 from core.resource_utils import get_resource_path
 
@@ -76,6 +79,68 @@ def _copy_if_needed(src: str, dst_dir: str) -> bool:
     return True
 
 
+def _fix_pc3_pmp_reference(pc3_path: str, pmp_dir: str) -> bool:
+    """
+    Проверяет и исправляет абсолютный путь к .pmp файлу внутри .pc3.
+    В AutoCAD в .pc3 зашит абсолютный путь (user_defined_model_pathname).
+    При переносе профиля или работе с разных компьютеров путь становится недействительным,
+    и AutoCAD перестает загружать форматы ГОСТ из .pmp файла.
+    """
+    if not os.path.isfile(pc3_path):
+        return False
+
+    try:
+        with open(pc3_path, "rb") as f:
+            data = f.read()
+
+        prefix_v2 = b"PIAFILEVERSION_2.0,PC3VER1,compress\r\npmzlibcodec"
+        prefix_v3 = b"PIAFILEVERSION_3.0,json"
+
+        # 1. Формат AutoCAD 2021 (PC3VER1 со сжатием zlib)
+        if data.startswith(prefix_v2) and len(data) > 60:
+            body = data[60:]
+            txt = zlib.decompress(body).decode("cp1251", errors="replace")
+            m = re.search(r'user_defined_model_pathname="([^"\r\n]+)', txt)
+            if not m:
+                return False
+            old_pmp = m.group(1).strip()
+            pmp_name = os.path.basename(old_pmp)
+            new_pmp = os.path.join(pmp_dir, pmp_name)
+
+            if (not os.path.exists(old_pmp) or old_pmp.lower() != new_pmp.lower()) and os.path.exists(new_pmp):
+                txt_new = txt.replace(f'user_defined_model_pathname="{old_pmp}', f'user_defined_model_pathname="{new_pmp}')
+                decomp_new = txt_new.encode("cp1251", errors="replace")
+                comp_new = zlib.compress(decomp_new)
+                adler_new = zlib.adler32(comp_new)
+                hdr_new = prefix_v2 + struct.pack("<III", adler_new, len(decomp_new), len(comp_new))
+                with open(pc3_path, "wb") as f:
+                    f.write(hdr_new + comp_new)
+                print(f"[Плоттеры] Исправлен путь к PMP в {os.path.basename(pc3_path)}: {new_pmp}")
+                return True
+
+        # 2. Формат AutoCAD 2024+ (JSON)
+        elif data.startswith(prefix_v3):
+            txt = data.decode("utf-8", errors="replace")
+            m = re.search(r'"user_defined_model_pathname"\s*:\s*"([^"\r\n]+)"', txt)
+            if not m:
+                return False
+            old_pmp = m.group(1).replace(r"\\", "\\").strip()
+            pmp_name = os.path.basename(old_pmp)
+            new_pmp = os.path.join(pmp_dir, pmp_name)
+            if (not os.path.exists(old_pmp) or old_pmp.lower() != new_pmp.lower()) and os.path.exists(new_pmp):
+                escaped_new = new_pmp.replace("\\", "\\\\")
+                escaped_old = m.group(1)
+                txt_new = txt.replace(f'"user_defined_model_pathname" : "{escaped_old}"',
+                                      f'"user_defined_model_pathname" : "{escaped_new}"')
+                with open(pc3_path, "w", encoding="utf-8") as f:
+                    f.write(txt_new)
+                print(f"[Плоттеры] Исправлен путь к PMP в {os.path.basename(pc3_path)}: {new_pmp}")
+                return True
+    except Exception as e:
+        print(f"Предупреждение: не удалось проверить/исправить PMP путь в {pc3_path}: {e}")
+    return False
+
+
 def install_bundled_plotters(app=None) -> list:
     """
     Копирует плоттеры из папки программы plotters/ в AutoCAD.
@@ -92,7 +157,6 @@ def install_bundled_plotters(app=None) -> list:
             return installed
         src_dir = os.path.join(get_resource_path("plotters"), year)
         if not os.path.isdir(src_dir):
-            # для этой версии AutoCAD своих плоттеров в программе нет — ничего не ставим
             return installed
         pc3_files = glob.glob(os.path.join(src_dir, "*.pc3"))
         pmp_files = glob.glob(os.path.join(src_dir, "*.pmp"))
@@ -100,18 +164,27 @@ def install_bundled_plotters(app=None) -> list:
             return installed
 
         for pc3_dir, pmp_dir in _acad_plotter_dirs(app):
-            for f in pc3_files:
-                try:
-                    if _copy_if_needed(f, pc3_dir):
-                        installed.append(os.path.join(pc3_dir, os.path.basename(f)))
-                except Exception as e:
-                    print(f"Предупреждение: не удалось установить {os.path.basename(f)} в {pc3_dir}: {e}")
+            os.makedirs(pc3_dir, exist_ok=True)
+            os.makedirs(pmp_dir, exist_ok=True)
+
             for f in pmp_files:
                 try:
                     if _copy_if_needed(f, pmp_dir):
                         installed.append(os.path.join(pmp_dir, os.path.basename(f)))
                 except Exception as e:
                     print(f"Предупреждение: не удалось установить {os.path.basename(f)} в {pmp_dir}: {e}")
+
+            for f in pc3_files:
+                try:
+                    if _copy_if_needed(f, pc3_dir):
+                        installed.append(os.path.join(pc3_dir, os.path.basename(f)))
+                except Exception as e:
+                    print(f"Предупреждение: не удалось установить {os.path.basename(f)} в {pc3_dir}: {e}")
+
+            # Проверяем и правим пути к PMP для всех PC3 (включая скопированные и DWG To PDF)
+            for f in os.listdir(pc3_dir):
+                if f.lower().endswith(".pc3"):
+                    _fix_pc3_pmp_reference(os.path.join(pc3_dir, f), pmp_dir)
 
         for path in installed:
             print(f"[Плоттеры] Установлен/обновлён: {path}")
