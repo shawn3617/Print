@@ -2,6 +2,7 @@
 Модуль проверки и автоматической установки обновлений PrintPDF через GitHub Releases API.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -10,7 +11,7 @@ import sys
 import time
 import urllib.request
 import urllib.error
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any, Callable, Tuple
 
 GITHUB_REPO = "shawn3617/Print"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
@@ -53,6 +54,7 @@ class UpdateInfo:
         installer_size: int = 0,
         portable_url: Optional[str] = None,
         portable_size: int = 0,
+        installer_sha256: Optional[str] = None,
     ):
         self.version = version
         self.title = title
@@ -62,6 +64,8 @@ class UpdateInfo:
         self.installer_url = installer_url
         self.installer_name = installer_name
         self.installer_size = installer_size
+        # SHA-256 установщика, который GitHub сам считает для файлов релиза (поле asset.digest)
+        self.installer_sha256 = installer_sha256
         self.portable_url = portable_url
         self.portable_size = portable_size
 
@@ -71,6 +75,49 @@ class UpdateInfo:
         if self.installer_size <= 0:
             return ""
         return f"{self.installer_size / (1024 * 1024):.1f} МБ"
+
+
+def _parse_sha256_digest(digest: Optional[str]) -> Optional[str]:
+    """Из поля GitHub 'sha256:<hex>' возвращает <hex> в нижнем регистре, иначе None."""
+    if not digest or not isinstance(digest, str):
+        return None
+    algo, _, value = digest.partition(":")
+    value = value.strip().lower()
+    if algo.strip().lower() != "sha256" or not re.fullmatch(r"[0-9a-f]{64}", value):
+        return None
+    return value
+
+
+def verify_download(
+    file_path: str,
+    expected_size: int = 0,
+    expected_sha256: Optional[str] = None
+) -> Tuple[bool, str]:
+    """
+    Проверяет скачанный установщик перед запуском.
+    Размер сверяется, если он известен (> 0); SHA-256 — если GitHub его сообщил.
+    Возвращает (True, "") или (False, понятная причина).
+    """
+    if not os.path.isfile(file_path):
+        return False, "файл обновления не найден после скачивания"
+
+    actual_size = os.path.getsize(file_path)
+    if actual_size == 0:
+        return False, "скачан пустой файл"
+    if expected_size and actual_size != expected_size:
+        return False, (f"файл скачан не полностью: {actual_size} байт из {expected_size}")
+
+    if expected_sha256:
+        h = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        if h.hexdigest().lower() != expected_sha256.lower():
+            return False, "контрольная сумма SHA-256 не совпала (файл повреждён)"
+    else:
+        print("[Updater] GitHub не сообщил SHA-256 установщика — проверен только размер")
+
+    return True, ""
 
 
 def check_for_updates(
@@ -106,6 +153,7 @@ def check_for_updates(
         installer_url = None
         installer_name = None
         installer_size = 0
+        installer_sha256 = None
         portable_url = None
         portable_size = 0
 
@@ -118,6 +166,7 @@ def check_for_updates(
                 installer_url = download_url
                 installer_name = name
                 installer_size = size
+                installer_sha256 = _parse_sha256_digest(asset.get("digest"))
             elif name.lower().endswith(".zip") and "portable" in name.lower():
                 portable_url = download_url
                 portable_size = size
@@ -132,7 +181,8 @@ def check_for_updates(
             installer_name=installer_name,
             installer_size=installer_size,
             portable_url=portable_url,
-            portable_size=portable_size
+            portable_size=portable_size,
+            installer_sha256=installer_sha256,
         )
 
     except Exception as e:
@@ -179,6 +229,9 @@ def download_file(
                     downloaded += len(chunk)
                     if progress_callback:
                         progress_callback(downloaded, total_size)
+
+        if total_size and downloaded != total_size:
+            raise IOError(f"соединение оборвалось: получено {downloaded} байт из {total_size}")
 
         return True
     except Exception as e:

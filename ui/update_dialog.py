@@ -15,19 +15,21 @@ from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QIcon, QFont
 
 from core.resource_utils import get_resource_path
-from core.updater import UpdateInfo, download_file, apply_update_and_restart, is_running_as_installed_app
+from core.updater import UpdateInfo, download_file, verify_download, apply_update_and_restart, is_running_as_installed_app
 from ui.themes import THEMES, build_theme_qss, apply_title_bar_theme
 
 
 class DownloadWorker(QThread):
     """Фоновый поток для скачивания файла установщика без зависания интерфейса."""
     progress = Signal(int, int)  # downloaded, total
-    finished = Signal(bool, str)  # success, file_path
+    finished = Signal(bool, str, str)  # success, file_path, причина ошибки
 
-    def __init__(self, url: str, target_path: str):
+    def __init__(self, url: str, target_path: str, expected_size: int = 0, expected_sha256: str = None):
         super().__init__()
         self.url = url
         self.target_path = target_path
+        self.expected_size = expected_size
+        self.expected_sha256 = expected_sha256
         self._is_cancelled = False
 
     def cancel(self):
@@ -46,7 +48,19 @@ class DownloadWorker(QThread):
             progress_callback=on_prog,
             is_cancelled_callback=is_canc
         )
-        self.finished.emit(ok and not self._is_cancelled, self.target_path)
+        if not ok or self._is_cancelled:
+            self.finished.emit(False, self.target_path, "")
+            return
+
+        # Не запускаем установщик, пока не убедились, что он скачан целиком и не повреждён
+        valid, reason = verify_download(self.target_path, self.expected_size, self.expected_sha256)
+        if not valid:
+            print(f"[Updater] Скачанный установщик отклонён: {reason}")
+            try:
+                os.remove(self.target_path)
+            except OSError as e:
+                print(f"[Updater] Не удалось удалить повреждённый файл {self.target_path}: {e}")
+        self.finished.emit(valid, self.target_path, reason)
 
 
 class UpdateDialog(QDialog):
@@ -213,7 +227,12 @@ class UpdateDialog(QDialog):
         file_name = self.update_info.installer_name or f"PrintPDF_Setup_v{self.update_info.version}.exe"
         target_path = os.path.join(temp_dir, file_name)
 
-        self.download_worker = DownloadWorker(self.update_info.installer_url, target_path)
+        self.download_worker = DownloadWorker(
+            self.update_info.installer_url,
+            target_path,
+            expected_size=self.update_info.installer_size,
+            expected_sha256=self.update_info.installer_sha256,
+        )
         self.download_worker.progress.connect(self.on_download_progress)
         self.download_worker.finished.connect(self.on_download_finished)
         self.download_worker.start()
@@ -229,9 +248,12 @@ class UpdateDialog(QDialog):
             down_mb = downloaded / (1024 * 1024)
             self.lbl_progress_status.setText(f"Скачано: {down_mb:.1f} МБ...")
 
-    def on_download_finished(self, success: bool, installer_path: str):
+    def on_download_finished(self, success: bool, installer_path: str, reason: str = ""):
         if not success:
-            self.lbl_progress_status.setText("❌ Ошибка при скачивании обновления.")
+            if reason:
+                self.lbl_progress_status.setText(f"❌ Обновление скачалось с ошибкой ({reason}). Попробуйте ещё раз.")
+            else:
+                self.lbl_progress_status.setText("❌ Ошибка при скачивании обновления.")
             self.btn_update.setEnabled(True)
             self.btn_update.setText("Повторить скачивание")
             self.btn_remind_later.setText("Закрыть")
