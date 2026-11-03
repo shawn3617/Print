@@ -10,9 +10,8 @@ class PrintCancelledError(Exception):
     pass
 
 
-from core.com_utils import com_retry
 # Повтор, когда AutoCAD занят. В exe занятость AutoCAD проявляется как AttributeError
-# вида "Item.ModelSpace" / "Open.ModelSpace" — обычный com_retry такое не повторяет.
+# вида "Item.ModelSpace" / "Open.ModelSpace" — старый com_retry такое не повторял.
 from core.autocad_connector import _retry_busy
 from core.plotter_installer import install_bundled_plotters
 
