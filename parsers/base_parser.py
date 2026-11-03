@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from typing import List, Any
 
 from core.models import Frame
-from core.com_utils import com_retry
+from core.autocad_connector import _retry_busy
 
 
 def lisp_str(s: str) -> str:
@@ -83,7 +83,7 @@ class BaseParser(ABC):
             if not same:
                 app.ActiveDocument = doc
         try:
-            com_retry(_do, max_attempts=15, delay=0.2)
+            _retry_busy(_do, max_attempts=15, delay=0.2)
         except Exception as e:
             print(f"Предупреждение: не удалось активировать чертеж перед LISP-экспортом: {e}")
 
@@ -137,7 +137,7 @@ class BaseParser(ABC):
         try:
             self._activate_doc(doc)
             self._wait_acad_idle(doc)
-            com_retry(lambda: doc.SendCommand(lisp_cmd), max_attempts=20, delay=0.25)
+            _retry_busy(lambda: doc.SendCommand(lisp_cmd), max_attempts=20, delay=0.25)
 
             end = time.perf_counter() + self.LISP_TIMEOUT
             while time.perf_counter() < end:

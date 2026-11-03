@@ -82,6 +82,47 @@ class TestBatchConnector(unittest.TestCase):
         self.assertEqual(self.connector.doc, new_doc)
         mock_docs.Open.assert_called_once_with(os.path.abspath(r"C:\Drawings\new.dwg"), True)
 
+    @patch("time.sleep", return_value=None)
+    @patch("os.path.exists", return_value=True)
+    def test_open_document_retries_when_busy(self, mock_exists, mock_sleep):
+        """AutoCAD занят: в exe это AttributeError 'Open.X' — открытие повторяется."""
+        mock_docs = MagicMock()
+        mock_docs.Count = 0
+        new_doc = MagicMock()
+        mock_docs.Open.side_effect = [AttributeError("Open.ModelSpace"), new_doc]
+        self.mock_app.Documents = mock_docs
+
+        doc, was_opened = self.connector.open_document(r"C:\Drawings\busy.dwg", read_only=True)
+        self.assertEqual(doc, new_doc)
+        self.assertTrue(was_opened)
+        self.assertEqual(mock_docs.Open.call_count, 2)
+
+    @patch("time.sleep", return_value=None)
+    @patch("os.path.exists", return_value=True)
+    def test_open_document_no_second_copy_after_failed_attempt(self, mock_exists, mock_sleep):
+        """Попытка упала, но AutoCAD всё же открыл чертеж — второй раз не открываем."""
+        path = os.path.abspath(r"C:\Drawings\late.dwg")
+        late_doc = MagicMock()
+        late_doc.FullName = path
+        late_doc.Name = "late.dwg"
+        state = {"opened": False}
+
+        mock_docs = MagicMock()
+        type(mock_docs).Count = property(lambda self: 1 if state["opened"] else 0)
+        mock_docs.Item.side_effect = lambda i: late_doc
+
+        def _open(*args):
+            state["opened"] = True
+            raise AttributeError("Open.ModelSpace")
+
+        mock_docs.Open.side_effect = _open
+        self.mock_app.Documents = mock_docs
+
+        doc, was_opened = self.connector.open_document(path, read_only=True)
+        self.assertEqual(doc, late_doc)
+        self.assertTrue(was_opened)
+        mock_docs.Open.assert_called_once()
+
     def test_close_document(self):
         doc = MagicMock()
         self.connector.doc = doc

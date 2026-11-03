@@ -232,6 +232,7 @@
 ### 2026-11-03
 - `core/models.py`: добавлен импорт `Any` — без него модуль падал с `NameError` при загрузке (не собирались 10 тестовых файлов). PR #1.
 - Добавлен автопрогон тестов на GitHub: `.github/workflows/tests.yml` (Windows, Python 3.12, `unittest discover`) — при каждом пуше и pull request. Результат — вкладка **Actions** в репозитории.
+- Старый `com_retry` больше нигде не используется: открытие и активация чертежа (`autocad_connector.py`), активация и `SendCommand` перед LISP (`base_parser.py`) переведены на `_retry_busy` (в exe занятость AutoCAD приходит как `AttributeError`, `com_retry` её не ловил). При повторе открытия сначала проверяется, не открыл ли AutoCAD чертеж с прошлой попытки — без второй копии. Тесты: `test_batch_connector.py`.
 
 ---
 

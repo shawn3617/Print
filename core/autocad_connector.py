@@ -2,7 +2,6 @@ import os
 import time
 import win32com.client
 import pythoncom
-from core.com_utils import com_retry
 
 def _retry_busy(func, max_attempts: int = 20, delay: float = 0.25):
     """
@@ -172,11 +171,20 @@ class AutoCADConnector:
             self.doc = existing_doc
             return existing_doc, False
 
-        # Открываем через коллекцию Documents с защитой от временной занятости AutoCAD
+        # Открываем через коллекцию Documents с защитой от временной занятости AutoCAD.
+        # Если прошлая попытка упала, но AutoCAD всё же успел открыть чертеж,
+        # повторно не открываем (иначе появится вторая копия «только чтение»).
+        attempt = {"n": 0}
+
         def _do_open():
+            attempt["n"] += 1
+            if attempt["n"] > 1:
+                already = self.find_open_document(abs_path)
+                if already is not None:
+                    return already
             return self.app.Documents.Open(abs_path, read_only)
 
-        opened = com_retry(_do_open, max_attempts=20, delay=0.35)
+        opened = _retry_busy(_do_open, max_attempts=20, delay=0.35)
         doc = self._wait_document_ready(abs_path, opened)
         self.doc = doc
         self._opened_by_us.add(abs_path.lower())
@@ -305,7 +313,7 @@ class AutoCADConnector:
             self.app.ActiveDocument = doc
 
         try:
-            com_retry(_do_activate, max_attempts=15, delay=0.25)
+            _retry_busy(_do_activate, max_attempts=15, delay=0.25)
             self.doc = doc
         except Exception as e:
             print(f"Предупреждение: не удалось активировать документ: {e}")
