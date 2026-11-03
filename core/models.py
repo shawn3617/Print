@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Tuple
+from typing import Any, Tuple
 
 # Стандартные размеры ГОСТ форматов (длинная x короткая в мм)
 GOST_FORMATS = {
