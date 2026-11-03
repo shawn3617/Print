@@ -34,7 +34,6 @@
 - **`autocad_connector.py`** — подключение к AutoCAD, открытие/поиск/активация/закрытие чертежей.
   - `_retry_busy(func)` — повтор, пока AutoCAD занят. Повторяет `AttributeError` (в exe занятость приходит как `'<unknown>.Count'`, `'Open.ModelSpace'`, `'Item.ModelSpace'`) и COM-ошибки «занят» (`RPC_E_CALL_REJECTED`, `RPC_E_SERVERCALL_RETRYLATER`, `RPC_E_DISCONNECTED`). Настоящие ошибки («Неверный ввод») сразу наверх.
   - `open_document` после `Documents.Open` ждёт готовности AutoCAD и берёт документ заново из `Documents` по пути (объект из `Open` в exe бывает «пустым»).
-- **`com_utils.py`** — старый `com_retry` (не ловит `AttributeError`; в печати заменён на `_retry_busy`).
 - **`printer.py`** — `BatchPrinter.print_frames`:
   - если активного чертежа нет (печать из папки) — открывает DWG первой рамки;
   - открытые для печати чертежи **остаются открытыми** (`close_opened_docs=False` по умолчанию);
@@ -237,6 +236,7 @@
 - Автообновление: скачанный установщик проверяется до запуска (`verify_download` в `core/updater.py`) — размер из GitHub и SHA-256, который GitHub сам считает для файлов релиза (`asset.digest`); оборванное скачивание тоже ловится. Не прошёл проверку — файл удаляется, установщик не запускается, в окне обновления причина и кнопка «Повторить скачивание». При выпуске релиза ничего дополнительно делать не нужно. Тесты: `test_updater.py`.
 - Уборка: версия программы вынесена в `core/version.py` (раньше была в трёх местах: `ui/about_dialog.py`, `build.bat`, `installer/setup.iss`); `spds_export_result.json` убран из git (он уже был в `.gitignore`, его пишет тест `test_spds_lisp_export.py`); пункт TODO про автообновление отмечен сделанным.
 - **Выпуск релиза v1.3.1**: слияние ветки в `main`, сборка `PrintPDF_Setup_v1.3.1.exe` и `PrintPDF_v1.3.1_Portable.zip`, успешный прогон всех 113 тестов локально и в GitHub Actions, публикация релиза v1.3.1.
+- `_retry_busy` (`core/autocad_connector.py`) теперь повторяет только «AutoCAD занят»: `AttributeError` (exe) и COM-ошибки `RPC_E_CALL_REJECTED`, `RPC_E_SERVERCALL_RETRYLATER`, `RPC_E_DISCONNECTED` (в том числе внутри `DISP_E_EXCEPTION`). Настоящие ошибки («Неверный ввод», битый DWG) — сразу наверх, без ожидания ~5–7 с; в консоль печатается `[AutoCAD] COM-ошибка без повтора (HRESULT …)` — если это окажется занятость, код добавить в `BUSY_HRESULTS`. Удалён неиспользуемый `core/com_utils.py`. Тесты: `test_retry_busy.py`.
 
 ---
 
