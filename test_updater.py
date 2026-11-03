@@ -13,7 +13,8 @@ from core.updater import (
     is_newer_version,
     UpdateInfo,
     check_for_updates,
-    download_file
+    download_file,
+    verify_download,
 )
 
 
@@ -48,7 +49,8 @@ class TestUpdater(unittest.TestCase):
                 {
                     "name": "PrintPDF_Setup_v1.4.0.exe",
                     "browser_download_url": "https://github.com/.../PrintPDF_Setup_v1.4.0.exe",
-                    "size": 38500000
+                    "size": 38500000,
+                    "digest": "sha256:" + "AB" * 32
                 },
                 {
                     "name": "PrintPDF_v1.4.0_Portable.zip",
@@ -68,6 +70,7 @@ class TestUpdater(unittest.TestCase):
         self.assertIn("PrintPDF_Setup_v1.4.0.exe", info.installer_url)
         self.assertEqual(info.installer_size, 38500000)
         self.assertIn("36.7 МБ", info.formatted_size_mb)
+        self.assertEqual(info.installer_sha256, "ab" * 32)
 
     @patch("urllib.request.urlopen")
     def test_check_for_updates_already_latest(self, mock_urlopen):
@@ -120,6 +123,61 @@ class TestUpdater(unittest.TestCase):
                 os.remove(target_file)
 
 
+    @patch("urllib.request.urlopen")
+    def test_download_file_truncated(self, mock_urlopen):
+        """Соединение оборвалось: получено меньше, чем Content-Length — ошибка, файл удалён."""
+        import tempfile
+        import os
+
+        mock_response = MagicMock()
+        mock_response.headers = {"Content-Length": "100"}
+        mock_response.read.side_effect = [b"Hello ", b"World!", b""]
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        target_file = os.path.join(tempfile.mkdtemp(), "setup.exe")
+        ok = download_file("http://example.com/test.exe", target_file)
+        self.assertFalse(ok)
+        self.assertFalse(os.path.exists(target_file))
+
+
+class TestVerifyDownload(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        import os
+        import hashlib
+        self.data = b"PrintPDF installer bytes"
+        self.sha = hashlib.sha256(self.data).hexdigest()
+        fd, self.path = tempfile.mkstemp(suffix=".exe")
+        with os.fdopen(fd, "wb") as f:
+            f.write(self.data)
+
+    def tearDown(self):
+        import os
+        if os.path.exists(self.path):
+            os.remove(self.path)
+
+    def test_ok_with_size_and_hash(self):
+        ok, reason = verify_download(self.path, len(self.data), self.sha.upper())
+        self.assertTrue(ok, reason)
+
+    def test_ok_without_hash(self):
+        ok, reason = verify_download(self.path, len(self.data), None)
+        self.assertTrue(ok, reason)
+
+    def test_wrong_size(self):
+        ok, reason = verify_download(self.path, len(self.data) + 1, self.sha)
+        self.assertFalse(ok)
+        self.assertIn("не полностью", reason)
+
+    def test_wrong_hash(self):
+        ok, reason = verify_download(self.path, len(self.data), "0" * 64)
+        self.assertFalse(ok)
+        self.assertIn("SHA-256", reason)
+
+    def test_missing_file(self):
+        ok, _ = verify_download(self.path + ".nope", 10, None)
+        self.assertFalse(ok)
+
 class TestUpdateDialog(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -150,6 +208,31 @@ class TestUpdateDialog(unittest.TestCase):
         self.assertTrue(dlg.btn_update.isEnabled())
         dlg.close()
 
+
+    def test_download_worker_rejects_corrupted_installer(self):
+        """Скачанный файл не совпал с SHA-256 — установщик не запускается, файл удалён."""
+        import os
+        import tempfile
+        from ui.update_dialog import DownloadWorker
+
+        target = os.path.join(tempfile.mkdtemp(), "PrintPDF_Setup.exe")
+
+        def fake_download(url, target_path, **kwargs):
+            with open(target_path, "wb") as f:
+                f.write(b"broken")
+            return True
+
+        results = []
+        worker = DownloadWorker("https://example.com/setup.exe", target,
+                                expected_size=6, expected_sha256="0" * 64)
+        worker.finished.connect(lambda ok, path, reason: results.append((ok, reason)))
+        with patch("ui.update_dialog.download_file", side_effect=fake_download):
+            worker.run()
+
+        self.assertEqual(len(results), 1)
+        self.assertFalse(results[0][0])
+        self.assertIn("SHA-256", results[0][1])
+        self.assertFalse(os.path.exists(target))
 
 if __name__ == "__main__":
     unittest.main()
