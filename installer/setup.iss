@@ -2,7 +2,10 @@
 ; Позволяет устанавливать программу без прав администратора (в AppData\Local\Programs\PrintPDF)
 
 #define MyAppName "PrintPDF"
-#define MyAppVersion "1.3.0"
+; Версия передаётся из build.bat (/DMyAppVersion=...), единый источник — core/version.py
+#ifndef MyAppVersion
+  #error Версия не задана: собирайте установщик через build.bat (он берёт её из core/version.py)
+#endif
 #define MyAppPublisher "PrintPDF Team"
 #define MyAppExeName "PrintPDF.exe"
 #define MyAppIcon "..\autocad_to_pdf_icon.ico"
