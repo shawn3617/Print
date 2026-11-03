@@ -5,7 +5,14 @@ call .venv\Scripts\activate
 
 REM Режим окна: --windowed (чистый релиз без консоли) или --console (с консолью для отладки)
 set WINDOW_MODE=--windowed
-set APP_VER=1.3.0
+REM Версия программы — единственный источник core\version.py (здесь не менять)
+set "APP_VER="
+for /f "delims=" %%V in ('python -c "from core.version import APP_VERSION; print(APP_VERSION)"') do set "APP_VER=%%V"
+if "%APP_VER%"=="" (
+  echo [ОШИБКА] Не удалось прочитать версию из core\version.py
+  pause
+  exit /b 1
+)
 
 echo ========================================================
 echo Сборка релизного дистрибутива PrintPDF v%APP_VER%
@@ -89,7 +96,7 @@ echo ========================================================
 if "%ISCC_EXE%"=="" goto NO_ISCC
 
 echo Используется компилятор: "%ISCC_EXE%"
-"%ISCC_EXE%" "installer\setup.iss"
+"%ISCC_EXE%" /DMyAppVersion=%APP_VER% "installer\setup.iss"
 if %ERRORLEVEL% NEQ 0 (
   echo.
   echo [ОШИБКА] Не удалось собрать инсталлятор Inno Setup. Код ошибки: %ERRORLEVEL%

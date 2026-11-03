@@ -15,12 +15,11 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon, QPixmap, QFont
 
 from core.resource_utils import get_resource_path
+from core.version import APP_VERSION, APP_RELEASE_DATE
 from ui.themes import THEMES, build_theme_qss, apply_title_bar_theme
 
 APP_NAME = "AutoCAD Batch PDF Plotter"
 APP_SUBTITLE = "PrintPDF"
-APP_VERSION = "1.3.0"
-APP_RELEASE_DATE = "30 октября 2026"
 
 
 class AboutDialog(QDialog):
