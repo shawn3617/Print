@@ -16,6 +16,13 @@ from core.autocad_connector import _retry_busy
 from core.plotter_installer import install_bundled_plotters
 
 
+def _safe_file_part(text, max_len: int) -> str:
+    """Часть имени PDF-файла: только буквы, цифры, пробел, «-», «_», «.»; не длиннее max_len.
+    Недопустимые символы (/ \\ : * ? " < > |) и слишком длинный путь AutoCAD отклоняет при печати."""
+    cleaned = "".join(c for c in str(text or "") if c.isalpha() or c.isdigit() or c in " -_.").strip()
+    return cleaned[:max_len].rstrip(" .")
+
+
 def _warn(what: str, e: Exception) -> None:
     """Не прерывает печать, но оставляет в консоли причину (правило: ошибки не глотать молча)."""
     print(f"[Печать] Предупреждение: {what}: {type(e).__name__}: {e}")
@@ -400,9 +407,8 @@ class BatchPrinter:
                             self._setup_model_layout(printer_name, style_name)
 
                     
-                safe_name = "".join([c for c in frame.sheet_name if c.isalpha() or c.isdigit() or c in ' -_']).strip()
-                if not safe_name:
-                    safe_name = "Без_Имени"
+                safe_name = _safe_file_part(frame.sheet_name, 80) or "Без_Имени"
+                safe_num = _safe_file_part(frame.sheet_number, 20) or "б-н"
                     
                 if progress_callback:
                     status = f"Печать листа {i + 1} из {len(frames)}: Лист {frame.sheet_number} ({safe_name})..."
@@ -601,22 +607,43 @@ class BatchPrinter:
                 dwg_prefix = ""
                 if has_multiple_dwgs and getattr(frame, "dwg_name", ""):
                     raw_dwg_base = os.path.splitext(frame.dwg_name)[0]
-                    clean_dwg_base = "".join([c for c in raw_dwg_base if c.isalpha() or c.isdigit() or c in ' -_']).strip()
+                    clean_dwg_base = _safe_file_part(raw_dwg_base, 40)
                     if clean_dwg_base:
                         dwg_prefix = f"[{clean_dwg_base}] "
 
                 if merge_pdf:
-                    filename = f"{i:04d}_{dwg_prefix}Лист {frame.sheet_number} - {safe_name}.pdf"
+                    filename = f"{i:04d}_{dwg_prefix}Лист {safe_num} - {safe_name}.pdf"
                     filepath = os.path.join(temp_dir, filename)
                     temp_files.append(filepath)
                 else:
-                    filename = f"{dwg_prefix}Лист {frame.sheet_number} - {safe_name}.pdf"
+                    filename = f"{dwg_prefix}Лист {safe_num} - {safe_name}.pdf"
                     filepath = os.path.abspath(os.path.join(output_path, filename))
                 
                 # Печать листа через PlotToFile с обработкой занятости AutoCAD (RPC_E_CALL_REJECTED)
                 def do_plot():
                     self.doc.Plot.PlotToFile(filepath, printer_name)
-                _retry_busy(do_plot)
+                try:
+                    _retry_busy(do_plot)
+                except pythoncom.com_error as e:
+                    # Подробности — чтобы по одному сообщению было видно, какой лист и с какими параметрами
+                    def _get(obj, attr):
+                        try:
+                            return getattr(obj, attr)
+                        except Exception:
+                            return "?"
+                    try:
+                        frame_size = (f"{abs(frame.max_point[0] - frame.min_point[0]):.1f} x "
+                                      f"{abs(frame.max_point[1] - frame.min_point[1]):.1f}")
+                    except Exception:
+                        frame_size = "?"
+                    details = (
+                        f"лист {frame.sheet_number} «{frame.sheet_name}», формат рамки {frame.paper_format}, "
+                        f"чертеж {getattr(frame, 'dwg_name', '') or _get(self.doc, 'Name')}, "
+                        f"вкладка {_get(cur_layout, 'Name')}, бумага «{_get(cur_layout, 'CanonicalMediaName')}», "
+                        f"PlotType={_get(cur_layout, 'PlotType')}, размер рамки {frame_size}, "
+                        f"файл ({len(filepath)} симв.): {filepath}"
+                    )
+                    raise RuntimeError(f"AutoCAD отказался печатать: {details}\nОшибка AutoCAD: {e}") from e
                 
                 if is_cancelled and is_cancelled():
                     raise PrintCancelledError("Печать отменена пользователем.")

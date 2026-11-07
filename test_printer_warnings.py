@@ -4,7 +4,7 @@ import unittest
 from contextlib import redirect_stdout
 from unittest.mock import MagicMock
 
-from core.printer import BatchPrinter
+from core.printer import BatchPrinter, _safe_file_part
 
 
 class TestPrinterWarnings(unittest.TestCase):
@@ -43,6 +43,18 @@ class TestPrinterWarnings(unittest.TestCase):
         self.assertIn("monochrome.ctb", styles)
         self.assertIn("нет стилей", out.getvalue())
 
+
+class TestSafeFilePart(unittest.TestCase):
+    def test_forbidden_characters_removed(self):
+        self.assertEqual(_safe_file_part('1/2: "План" *эт.*', 50), "12 План эт")  # точка в конце имени Windows не допускает
+
+    def test_length_limited(self):
+        long_name = "Схема расположения элементов " * 10
+        self.assertLessEqual(len(_safe_file_part(long_name, 80)), 80)
+
+    def test_empty(self):
+        self.assertEqual(_safe_file_part(None, 20), "")
+        self.assertEqual(_safe_file_part("///", 20), "")
 
 if __name__ == "__main__":
     unittest.main()
