@@ -89,6 +89,15 @@ class AutoCADConnector:
             # Пытаемся получить доступ к уже запущенному процессу AutoCAD
             self.app = win32com.client.GetActiveObject("AutoCAD.Application")
             self._ensure_trusted_paths()
+            # Нет открытых чертежей (стартовая вкладка): ActiveDocument дал бы ошибку
+            # «Не удалось получить объект документа» — это не сбой, просто документа нет.
+            try:
+                doc_count = _retry_busy(lambda: self.app.Documents.Count, max_attempts=12, delay=0.25)
+            except Exception:
+                doc_count = None
+            if doc_count == 0:
+                self.doc = None
+                return True
             try:
                 self.doc = _retry_busy(lambda: self.app.ActiveDocument, max_attempts=12, delay=0.25)
             except Exception:

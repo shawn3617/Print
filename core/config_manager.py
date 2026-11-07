@@ -6,6 +6,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "printer": "DWG To PDF.pc3",
     "plot_style": "monochrome.ctb",
     "fallback_paper": "",
+    "fallback_paper_canonical": "",
     "merge_mode": "В один файл (PDF)",
     "open_after_print": True,
     "sync_autocad": True,

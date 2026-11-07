@@ -764,6 +764,8 @@ class PrintManagerUI(QMainWindow):
             "printer": printer_text if printer_text else current_cfg.get("printer", "DWG To PDF.pc3"),
             "plot_style": style_text if style_text else current_cfg.get("plot_style", "monochrome.ctb"),
             "fallback_paper": paper_text if paper_text else current_cfg.get("fallback_paper", ""),
+            "fallback_paper_canonical": (self.paper_dict.get(paper_text, "") if paper_text
+                                         else current_cfg.get("fallback_paper_canonical", "")),
             "merge_mode": mode_text if mode_text else current_cfg.get("merge_mode", "В один файл (PDF)"),
             "open_after_print": self.chk_open_after.isChecked(),
             "sync_autocad": self.chk_sync_acad.isChecked(),
@@ -971,6 +973,10 @@ class PrintManagerUI(QMainWindow):
             self.printer = BatchPrinter(self.connector.doc, connector=self.connector)
             if self.connector.doc:
                 self.load_printer_settings()
+            else:
+                # Нет открытого чертежа — AutoCAD не отдаёт списки плоттеров. Показываем
+                # сохранённые настройки, чтобы можно было печатать из папки.
+                self.load_printer_settings_from_config()
             
         except Exception as e:
             self.lbl_document.setText("Ошибка подключения")
@@ -983,6 +989,9 @@ class PrintManagerUI(QMainWindow):
         was_loading = self._is_loading_config
         self._is_loading_config = True
         try:
+            # Списки теперь настоящие — убираем подсказку «загрузятся позже»
+            for combo in (self.combo_printers, self.combo_papers, self.combo_style):
+                combo.setToolTip("")
             # Загружаем принтеры
             printers = self.printer.get_printers()
             self.combo_printers.blockSignals(True)
@@ -1020,6 +1029,34 @@ class PrintManagerUI(QMainWindow):
         finally:
             self._is_loading_config = was_loading
         
+    def load_printer_settings_from_config(self):
+        """
+        Без открытого чертежа (стартовая вкладка AutoCAD) списки плоттеров, форматов и стилей
+        получить нельзя. Заполняем поля сохранёнными значениями из config.json (или стандартными),
+        чтобы печать из папки работала; полные списки загрузятся, когда появится чертёж.
+        """
+        was_loading = self._is_loading_config
+        self._is_loading_config = True
+        try:
+            printer = self.config_manager.get("printer") or "DWG To PDF.pc3"
+            style = self.config_manager.get("plot_style") or "monochrome.ctb"
+            paper = self.config_manager.get("fallback_paper") or ""
+            if "b5" in paper.lower() or "в5" in paper.lower():
+                paper = ""
+            paper_sys = self.config_manager.get("fallback_paper_canonical") or paper
+
+            hint = "Полный список появится, когда в AutoCAD будет открыт чертёж (кнопка «Обновить связь»)"
+            for combo, value in ((self.combo_printers, printer), (self.combo_papers, paper), (self.combo_style, style)):
+                combo.blockSignals(True)
+                combo.clear()
+                if value:
+                    combo.addItem(value)
+                combo.setToolTip(hint)
+                combo.blockSignals(False)
+            self.paper_dict = {paper: paper_sys} if paper else {}
+        finally:
+            self._is_loading_config = was_loading
+
     def update_paper_sizes(self, printer_name: str):
         if not self.printer or not printer_name: return
         self.paper_dict = self.printer.get_media_names(printer_name)
