@@ -16,6 +16,11 @@ from core.autocad_connector import _retry_busy
 from core.plotter_installer import install_bundled_plotters
 
 
+def _warn(what: str, e: Exception) -> None:
+    """Не прерывает печать, но оставляет в консоли причину (правило: ошибки не глотать молча)."""
+    print(f"[Печать] Предупреждение: {what}: {type(e).__name__}: {e}")
+
+
 class BatchPrinter:
     def __init__(self, doc, connector=None):
         self.doc = doc
@@ -42,7 +47,8 @@ class BatchPrinter:
         # Возвращаем список устройств (может потребовать преобразования из COM-кортежа)
         try:
             return list(layout.GetPlotDeviceNames())
-        except:
+        except Exception as e:
+            _warn("не удалось получить список плоттеров из AutoCAD, показан стандартный", e)
             return ["DWG To PDF.pc3", "AutoCAD PDF (High Quality Print).pc3"]
 
     def get_media_names(self, printer_name: str):
@@ -57,7 +63,8 @@ class BatchPrinter:
                 local_name = layout.GetLocaleMediaName(sys_name)
                 result[local_name] = sys_name
             return result
-        except:
+        except Exception as e:
+            _warn(f"не удалось получить форматы бумаги плоттера «{printer_name}», показан запасной", e)
             return {"ISO full bleed A2 (594.00 x 420.00 MM)": "ISO_full_bleed_A2_(594.00_x_420.00_MM)"}
 
     def get_plot_styles(self):
@@ -65,7 +72,8 @@ class BatchPrinter:
         layout = self.doc.ModelSpace.Layout
         try:
             return list(layout.GetPlotStyleTableNames())
-        except:
+        except Exception as e:
+            _warn("не удалось получить список стилей печати из AutoCAD, показан стандартный", e)
             return ["monochrome.ctb", "acad.ctb"]
 
     def _apply_printer(self, layout, printer_name: str) -> str:
@@ -167,8 +175,8 @@ class BatchPrinter:
             pref_path = self.doc.Application.Preferences.Files.PrinterConfigPath
             if pref_path:
                 search_dirs.extend([p.strip() for p in pref_path.split(";") if p.strip()])
-        except:
-            pass
+        except Exception as e:
+            _warn("не удалось прочитать папку плоттеров из настроек AutoCAD", e)
             
         appdata_patterns = [
             os.path.expandvars(r"%APPDATA%\Autodesk\**\Plotters"),
@@ -262,8 +270,8 @@ class BatchPrinter:
                 for full_path, _ in self.connector.get_open_documents():
                     if full_path:
                         initially_open_files.add(os.path.abspath(full_path).lower())
-            except Exception:
-                pass
+            except Exception as e:
+                _warn("не удалось получить список уже открытых чертежей", e)
         # Чертежи, открытые только для печати: {путь_в_нижнем_регистре: COM-документ}.
         # COM-объекты нельзя класть в set (CDispatch не хешируется) — ключом служит путь.
         opened_docs_to_close = {}
@@ -304,8 +312,8 @@ class BatchPrinter:
                     if getattr(self.doc.ActiveLayout, "Name", "") != getattr(model_layout, "Name", "Model"):
                         self.doc.ActiveLayout = model_layout
                 _retry_busy(switch_init_model)
-            except Exception:
-                pass
+            except Exception as e:
+                _warn("не удалось переключиться на вкладку «Модель» (возможен пустой лист)", e)
             self._setup_model_layout(printer_name, style_name)
 
         # Строим словарь {формат -> canonical_name} из доступных форматов принтера
@@ -315,7 +323,8 @@ class BatchPrinter:
         try:
             original_bg_plot = self.doc.GetVariable("BACKGROUNDPLOT")
             self.doc.SetVariable("BACKGROUNDPLOT", 0)
-        except:
+        except Exception as e:
+            _warn("не удалось отключить фоновую печать BACKGROUNDPLOT", e)
             original_bg_plot = 0
         
         # Проверяем, содержат ли рамки несколько разных DWG
@@ -332,8 +341,8 @@ class BatchPrinter:
         original_active_layout_name = None
         try:
             original_active_layout_name = self.doc.ActiveLayout.Name
-        except Exception:
-            pass
+        except Exception as e:
+            _warn("не удалось запомнить активную вкладку чертежа", e)
         
         try:
             for i, frame in enumerate(frames):
@@ -346,7 +355,7 @@ class BatchPrinter:
                     try:
                         cur_doc_path = getattr(self.doc, "FullName", "") or ""
                     except Exception:
-                        pass
+                        pass  # путь неизвестен — ниже просто откроем/найдём нужный чертеж заново
                     target_path = os.path.abspath(frame.dwg_path)
                     if not cur_doc_path or os.path.abspath(cur_doc_path).lower() != target_path.lower():
                         doc, was_opened = self.connector.open_document(target_path, read_only=True)
@@ -358,8 +367,8 @@ class BatchPrinter:
                             opened_docs_to_close[target_path.lower()] = doc
                         try:
                             _retry_busy(lambda: self.doc.SetVariable("BACKGROUNDPLOT", 0))
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            _warn(f"не удалось отключить BACKGROUNDPLOT в чертеже {target_path}", e)
                         if has_model_frames:
                             self._setup_model_layout(printer_name, style_name)
 
@@ -407,8 +416,9 @@ class BatchPrinter:
                         if media_name:
                             try:
                                 cur_layout.CanonicalMediaName = media_name
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                _warn(f"плоттер не принял формат бумаги «{media_name}» (лист {frame.sheet_number}) "
+                                      f"— печать на текущем формате листа", e)
 
                         has_window = (
                             getattr(frame, "source_type", "") != "Layout"
@@ -427,8 +437,8 @@ class BatchPrinter:
                                 if len(dims) >= 2:
                                     paper_w, paper_h = dims[-2], dims[-1]
                                     is_paper_landscape = paper_w > paper_h
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                _warn(f"не удалось определить ориентацию бумаги (лист {frame.sheet_number})", e)
                             frame_w = abs(frame.max_point[0] - frame.min_point[0])
                             frame_h = abs(frame.max_point[1] - frame.min_point[1])
                             is_frame_landscape = frame_w > frame_h
@@ -503,8 +513,8 @@ class BatchPrinter:
                             if len(dims) >= 2:
                                 paper_w, paper_h = dims[-2], dims[-1]
                                 is_paper_landscape = paper_w > paper_h
-                        except:
-                            pass
+                        except Exception as e:
+                            _warn(f"не удалось определить ориентацию бумаги (лист {frame.sheet_number})", e)
                         frame_w = abs(frame.max_point[0] - frame.min_point[0])
                         frame_h = abs(frame.max_point[1] - frame.min_point[1])
                         is_frame_landscape = frame_w > frame_h
@@ -523,8 +533,8 @@ class BatchPrinter:
                         except Exception:
                             try:
                                 view = self.doc.Views.Add(view_name)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                _warn("не удалось создать вид печати, печать по окну (acWindow)", e)
 
                         if view:
                             cx = (frame.min_point[0] + frame.max_point[0]) / 2.0
@@ -631,16 +641,16 @@ class BatchPrinter:
             # BACKGROUNDPLOT хранится в реестре — возвращаем, пока открыт хоть один чертеж
             try:
                 self.doc.SetVariable("BACKGROUNDPLOT", original_bg_plot)
-            except Exception:
-                pass
+            except Exception as e:
+                _warn(f"не удалось вернуть BACKGROUNDPLOT={original_bg_plot}", e)
 
             # Закрываем чертежи, открытые для печати, — только если так попросили
             for d in (opened_docs_to_close.values() if close_opened_docs else []):
                 try:
                     if self.connector:
                         self.connector.close_document(d, save_changes=False)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _warn("не удалось закрыть чертеж, открытый для печати", e)
 
             # Дальше работаем с исходным чертежом: self.doc мог указывать на уже закрытый.
             # Исходного не было (печать из папки) — берём тот, что сейчас активен в AutoCAD (или None)
@@ -656,15 +666,15 @@ class BatchPrinter:
             if original_active_layout_name and initial_active_doc is not None:
                 try:
                     self.doc.ActiveLayout = self.doc.Layouts.Item(original_active_layout_name)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _warn(f"не удалось вернуть вкладку «{original_active_layout_name}»", e)
 
             # Возвращаем исходный активный документ
             if initial_active_doc and self.connector:
                 try:
                     self.connector.activate_document(initial_active_doc)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _warn("не удалось вернуть исходный активный чертеж", e)
 
             # Очищаем временные View печати, если остались
             try:
@@ -673,15 +683,15 @@ class BatchPrinter:
                         if getattr(v, "Name", "").startswith("_SHT_PLOT_VIEW_"):
                             try:
                                 v.Delete()
-                            except Exception:
-                                pass
-            except Exception:
-                pass
+                            except Exception as e:
+                                _warn(f"не удалось удалить временный вид {getattr(v, 'Name', '?')}", e)
+            except Exception as e:
+                _warn("не удалось очистить временные виды печати", e)
 
             # Удаляем всю временную папку целиком
             if temp_dir and os.path.exists(temp_dir):
                 try:
                     shutil.rmtree(temp_dir, ignore_errors=True)
-                except:
-                    pass
+                except Exception as e:
+                    _warn(f"не удалось удалить временную папку {temp_dir}", e)
 
