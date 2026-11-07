@@ -3,20 +3,55 @@ import time
 import win32com.client
 import pythoncom
 
+# HRESULT-ы «AutoCAD занят / вызов отклонён» — только их имеет смысл повторять.
+RPC_E_CALL_REJECTED = -2147418111          # 0x80010001 «Вызов был отклонён»
+RPC_E_SERVERCALL_RETRYLATER = -2147417846  # 0x8001010A «Сервер занят, повторите позже»
+RPC_E_DISCONNECTED = -2147417848           # 0x80010108 объект временно отключён
+DISP_E_EXCEPTION = -2147352567             # 0x80020009 ошибка внутри AutoCAD (настоящий код — в excepinfo)
+BUSY_HRESULTS = (RPC_E_CALL_REJECTED, RPC_E_SERVERCALL_RETRYLATER, RPC_E_DISCONNECTED)
+
+
+def _is_busy_com_error(e: Exception) -> bool:
+    """
+    True, если COM-ошибка означает «AutoCAD занят» (стоит повторить).
+    Настоящие ошибки («Неверный ввод», «Файл не найден» и т.п.) — False: их повтор не поможет.
+    """
+    args = getattr(e, "args", ()) or ()
+    hresult = getattr(e, "hresult", None)
+    if hresult is None and args and isinstance(args[0], int):
+        hresult = args[0]
+    if hresult in BUSY_HRESULTS:
+        return True
+    # Ошибка изнутри AutoCAD: настоящий код лежит в excepinfo (args[2]), последний элемент — scode
+    if hresult == DISP_E_EXCEPTION and len(args) > 2 and isinstance(args[2], tuple) and args[2]:
+        if args[2][-1] in BUSY_HRESULTS:
+            return True
+    text = " ".join(str(a) for a in args if isinstance(a, (str, tuple))).lower()
+    return "отклонен" in text or "отклонён" in text or "rejected" in text
+
+
 def _retry_busy(func, max_attempts: int = 20, delay: float = 0.25):
     """
     Повторяет вызов, пока AutoCAD занят.
     Особенность win32com без кэша типов (так работает exe): если AutoCAD занят и отклоняет вызов,
     ошибка приходит не как com_error, а как AttributeError '<unknown>.Count' / 'Open.ModelSpace'.
-    Поэтому повторяем и при AttributeError.
+    Поэтому повторяем при AttributeError и при COM-ошибках занятости (_is_busy_com_error).
+    Настоящие COM-ошибки («Неверный ввод» и т.п.) сразу пробрасываются наверх — без лишнего ожидания.
     """
     last = None
-    for _ in range(max_attempts):
+    for _ in range(max(1, max_attempts)):
         try:
             return func()
-        except (pythoncom.com_error, AttributeError) as e:
+        except AttributeError as e:
             last = e
-            time.sleep(delay)
+        except pythoncom.com_error as e:
+            if not _is_busy_com_error(e):
+                # Печатаем код — если это всё же «занятость», которой нет в списке, её легко добавить
+                hr = e.args[0] if getattr(e, "args", None) else "?"
+                print(f"[AutoCAD] COM-ошибка без повтора (HRESULT {hr}): {e}")
+                raise
+            last = e
+        time.sleep(delay)
     raise last
 
 
