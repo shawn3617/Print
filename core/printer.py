@@ -157,6 +157,30 @@ class BatchPrinter:
             print(f"Ошибка при построении media_map: {e}")
         return result
 
+    def _resolve_media_name(self, name: str, media_map: dict) -> str:
+        """
+        Возвращает системное (canonical) имя резервного формата для текущего плоттера.
+        Принимает системное или локальное имя («ISO без полей A3 (420.00 x 297.00 мм)»).
+        Пустое имя — берётся A3, затем A1 из media_map.
+        """
+        if not name:
+            fallback = media_map.get("A3") or media_map.get("A1") or ""
+            if fallback:
+                print(f"[Печать] Резервный формат не задан — используется «{fallback}»")
+            return fallback
+        try:
+            layout = _retry_busy(lambda: self.doc.ModelSpace.Layout)
+            names = list(_retry_busy(layout.GetCanonicalMediaNames))
+            if name in names:
+                return name
+            for sys_name in names:
+                if _retry_busy(lambda s=sys_name: layout.GetLocaleMediaName(s)) == name:
+                    return sys_name
+            _warn(f"резервный формат «{name}» не найден у плоттера", LookupError(name))
+        except Exception as e:
+            _warn(f"не удалось проверить резервный формат «{name}»", e)
+        return name
+
     def _disable_pc3_view_file(self, printer_name: str) -> bool:
         """
         Проверяет и отключает опцию 'View_New_File' (Просмотр результатов в программе просмотра)
@@ -318,6 +342,9 @@ class BatchPrinter:
 
         # Строим словарь {формат -> canonical_name} из доступных форматов принтера
         media_map = self._build_media_map(printer_name)
+        # Резервный формат мог прийти локальным именем (настройки из config.json без открытого
+        # чертежа) или пустым — приводим к системному имени этого плоттера
+        canonical_media_name = self._resolve_media_name(canonical_media_name, media_map)
         
         # Отключаем фоновую печать
         try:
