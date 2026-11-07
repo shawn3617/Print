@@ -238,6 +238,9 @@
 - **Выпуск релиза v1.3.1**: слияние ветки в `main`, сборка `PrintPDF_Setup_v1.3.1.exe` и `PrintPDF_v1.3.1_Portable.zip`, успешный прогон всех 113 тестов локально и в GitHub Actions, публикация релиза v1.3.1.
 - `_retry_busy` (`core/autocad_connector.py`) теперь повторяет только «AutoCAD занят»: `AttributeError` (exe) и COM-ошибки `RPC_E_CALL_REJECTED`, `RPC_E_SERVERCALL_RETRYLATER`, `RPC_E_DISCONNECTED` (в том числе внутри `DISP_E_EXCEPTION`). Настоящие ошибки («Неверный ввод», битый DWG) — сразу наверх, без ожидания ~5–7 с; в консоль печатается `[AutoCAD] COM-ошибка без повтора (HRESULT …)` — если это окажется занятость, код добавить в `BUSY_HRESULTS`. Удалён неиспользуемый `core/com_utils.py`. Тесты: `test_retry_busy.py`.
 
+### 2026-11-07
+- **Выпуск релиза v1.3.2**: слияние ветки claude/funny-albattani-1ara2j в `main`, оптимизация `_retry_busy` (только реальная занятость AutoCAD, мгновенный пропуск поврежденных файлов), сборка `PrintPDF_Setup_v1.3.2.exe` и `PrintPDF_v1.3.2_Portable.zip`, успешный прогон всех 121 тестов.
+
 ---
 
 ## 5. Известные ограничения и проблемы
