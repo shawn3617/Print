@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 import urllib.error
@@ -53,8 +54,10 @@ class UpdateInfo:
         installer_name: Optional[str] = None,
         installer_size: int = 0,
         portable_url: Optional[str] = None,
+        portable_name: Optional[str] = None,
         portable_size: int = 0,
         installer_sha256: Optional[str] = None,
+        portable_sha256: Optional[str] = None,
     ):
         self.version = version
         self.title = title
@@ -67,7 +70,9 @@ class UpdateInfo:
         # SHA-256 установщика, который GitHub сам считает для файлов релиза (поле asset.digest)
         self.installer_sha256 = installer_sha256
         self.portable_url = portable_url
+        self.portable_name = portable_name
         self.portable_size = portable_size
+        self.portable_sha256 = portable_sha256
 
     @property
     def formatted_size_mb(self) -> str:
@@ -75,6 +80,13 @@ class UpdateInfo:
         if self.installer_size <= 0:
             return ""
         return f"{self.installer_size / (1024 * 1024):.1f} МБ"
+
+    @property
+    def formatted_portable_size_mb(self) -> str:
+        """Размер портативного архива в мегабайтах."""
+        if self.portable_size <= 0:
+            return ""
+        return f"{self.portable_size / (1024 * 1024):.1f} МБ"
 
 
 def _parse_sha256_digest(digest: Optional[str]) -> Optional[str]:
@@ -155,7 +167,9 @@ def check_for_updates(
         installer_size = 0
         installer_sha256 = None
         portable_url = None
+        portable_name = None
         portable_size = 0
+        portable_sha256 = None
 
         for asset in data.get("assets", []):
             name = asset.get("name", "")
@@ -169,7 +183,9 @@ def check_for_updates(
                 installer_sha256 = _parse_sha256_digest(asset.get("digest"))
             elif name.lower().endswith(".zip") and "portable" in name.lower():
                 portable_url = download_url
+                portable_name = name
                 portable_size = size
+                portable_sha256 = _parse_sha256_digest(asset.get("digest"))
 
         return UpdateInfo(
             version=clean_tag,
@@ -181,8 +197,10 @@ def check_for_updates(
             installer_name=installer_name,
             installer_size=installer_size,
             portable_url=portable_url,
+            portable_name=portable_name,
             portable_size=portable_size,
             installer_sha256=installer_sha256,
+            portable_sha256=portable_sha256,
         )
 
     except Exception as e:
@@ -291,4 +309,125 @@ def apply_update_and_restart(installer_path: str, silent: bool = True) -> bool:
         return True
     except Exception as e:
         print(f"[Updater] Ошибка запуска установщика: {e}")
+        return False
+
+
+def apply_portable_update_and_restart(zip_path: str, target_dir: str) -> bool:
+    """
+    Автоматически обновляет портативную версию программы на месте:
+    1. Ждет завершения текущего процесса PrintPDF.exe.
+    2. Сохраняет пользовательский config.json (если есть).
+    3. Распаковывает новый ZIP во временную папку.
+    4. Копирует файлы в target_dir с перезаписью.
+    5. Восстанавливает config.json.
+    6. Запускает обновленный PrintPDF.exe.
+    7. Удаляет временные файлы.
+    """
+    if not os.path.isfile(zip_path) or not os.path.isdir(target_dir):
+        return False
+
+    pid = os.getpid()
+    target_exe = os.path.join(target_dir, "PrintPDF.exe")
+    script_path = os.path.join(tempfile.gettempdir(), f"printpdf_update_portable_{pid}.ps1")
+
+    safe_target_dir = os.path.abspath(target_dir).replace("'", "''")
+    safe_target_exe = os.path.abspath(target_exe).replace("'", "''")
+    safe_zip_path = os.path.abspath(zip_path).replace("'", "''")
+
+    ps_content = f"""# Автообновление портативной версии PrintPDF
+$ProcessId = {pid}
+$ZipPath = '{safe_zip_path}'
+$TargetDir = '{safe_target_dir}'
+$TargetExe = '{safe_target_exe}'
+
+# 1. Ждём завершения текущего процесса (до 15 секунд)
+$timeoutSeconds = 15
+$waited = 0
+while ((Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) -and ($waited -lt $timeoutSeconds)) {{
+    Start-Sleep -Milliseconds 300
+    $waited += 0.3
+}}
+
+if (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) {{
+    Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 500
+}}
+
+# 2. Сохраняем пользовательский config.json
+$savedConfig = $null
+$configCandidates = @(
+    (Join-Path $TargetDir "config.json"),
+    (Join-Path $TargetDir "_internal\\config.json")
+)
+foreach ($cfg in $configCandidates) {{
+    if (Test-Path $cfg) {{
+        $savedConfig = Get-Content $cfg -Raw -Encoding utf8
+        break
+    }}
+}}
+
+# 3. Распаковываем ZIP-архив во временную папку
+$extractDir = Join-Path $env:TEMP ("printpdf_unpack_" + [System.Guid]::NewGuid().ToString("N"))
+try {{
+    Expand-Archive -Path $ZipPath -DestinationPath $extractDir -Force
+
+    # Проверяем структуру распакованного архива: файлы могут быть внутри папки PrintPDF/ или в корне
+    $sourceDir = $extractDir
+    if (Test-Path (Join-Path $extractDir "PrintPDF\\PrintPDF.exe")) {{
+        $sourceDir = Join-Path $extractDir "PrintPDF"
+    }}
+
+    # Копируем всё содержимое в целевую папку с заменой
+    Copy-Item -Path "$sourceDir\\*" -Destination $TargetDir -Recurse -Force
+
+    # Восстанавливаем пользовательский config.json, если был сохранён
+    if ($savedConfig) {{
+        $restoreCandidates = @(
+            (Join-Path $TargetDir "_internal\\config.json"),
+            (Join-Path $TargetDir "config.json")
+        )
+        foreach ($rc in $restoreCandidates) {{
+            if (Test-Path (Split-Path $rc)) {{
+                [System.IO.File]::WriteAllText($rc, $savedConfig, [System.Text.Encoding]::UTF8)
+                break
+            }}
+        }}
+    }}
+
+    # Удаляем временную папку распаковки и zip
+    Remove-Item -Path $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path $ZipPath -Force -ErrorAction SilentlyContinue
+
+    # Запускаем обновлённую программу
+    if (Test-Path $TargetExe) {{
+        Start-Process -FilePath $TargetExe
+    }}
+}} catch {{
+    $logFile = Join-Path $env:TEMP "printpdf_portable_update_error.log"
+    $_ | Out-File $logFile -Encoding utf8
+}} finally {{
+    # Скрипт удаляет сам себя
+    Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
+}}
+"""
+    try:
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(ps_content)
+
+        flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        subprocess.Popen(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy", "Bypass",
+                "-WindowStyle", "Hidden",
+                "-File", script_path
+            ],
+            shell=False,
+            creationflags=flags,
+            close_fds=True
+        )
+        return True
+    except Exception as e:
+        print(f"[Updater] Ошибка запуска скрипта обновления: {e}")
         return False

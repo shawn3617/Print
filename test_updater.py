@@ -71,6 +71,10 @@ class TestUpdater(unittest.TestCase):
         self.assertEqual(info.installer_size, 38500000)
         self.assertIn("36.7 МБ", info.formatted_size_mb)
         self.assertEqual(info.installer_sha256, "ab" * 32)
+        self.assertEqual(info.portable_name, "PrintPDF_v1.4.0_Portable.zip")
+        self.assertIn("PrintPDF_v1.4.0_Portable.zip", info.portable_url)
+        self.assertEqual(info.portable_size, 54000000)
+        self.assertIn("51.5 МБ", info.formatted_portable_size_mb)
 
     @patch("urllib.request.urlopen")
     def test_check_for_updates_already_latest(self, mock_urlopen):
@@ -233,6 +237,45 @@ class TestUpdateDialog(unittest.TestCase):
         self.assertFalse(results[0][0])
         self.assertIn("SHA-256", results[0][1])
         self.assertFalse(os.path.exists(target))
+
+
+class TestPortableUpdate(unittest.TestCase):
+    def test_apply_portable_update_invalid_args(self):
+        from core.updater import apply_portable_update_and_restart
+        self.assertFalse(apply_portable_update_and_restart("nonexistent.zip", "nonexistent_dir"))
+
+    @patch("subprocess.Popen")
+    def test_apply_portable_update_generates_script_and_launches(self, mock_popen):
+        import tempfile
+        import os
+        from core.updater import apply_portable_update_and_restart
+
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
+            zip_path = tf.name
+        target_dir = tempfile.mkdtemp()
+
+        try:
+            ok = apply_portable_update_and_restart(zip_path, target_dir)
+            self.assertTrue(ok)
+            self.assertTrue(mock_popen.called)
+            args, kwargs = mock_popen.call_args
+            cmd_args = args[0]
+            self.assertEqual(cmd_args[0], "powershell.exe")
+            self.assertIn("-File", cmd_args)
+            script_file = cmd_args[cmd_args.index("-File") + 1]
+            self.assertTrue(os.path.isfile(script_file))
+            with open(script_file, "r", encoding="utf-8") as f:
+                script_content = f.read()
+            self.assertIn("Expand-Archive", script_content)
+            self.assertIn("Copy-Item", script_content)
+            self.assertIn("config.json", script_content)
+            os.remove(script_file)
+        finally:
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+            if os.path.exists(target_dir):
+                import shutil
+                shutil.rmtree(target_dir, ignore_errors=True)
 
 if __name__ == "__main__":
     unittest.main()

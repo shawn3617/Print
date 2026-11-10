@@ -15,7 +15,11 @@ from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QIcon, QFont
 
 from core.resource_utils import get_resource_path
-from core.updater import UpdateInfo, download_file, verify_download, apply_update_and_restart, is_running_as_installed_app
+from core.updater import (
+    UpdateInfo, download_file, verify_download,
+    apply_update_and_restart, apply_portable_update_and_restart,
+    is_running_as_installed_app
+)
 from ui.themes import THEMES, build_theme_qss, apply_title_bar_theme
 
 
@@ -106,9 +110,13 @@ class UpdateDialog(QDialog):
         lbl_title.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {theme.get('accent', '#89b4fa')};")
         title_vbox.addWidget(lbl_title)
 
+        is_portable = getattr(sys, "frozen", False) and not is_running_as_installed_app()
         ver_text = f"Текущая: <b>v{self.current_version}</b>  ➔  Новая: <b style='color: #a6e3a1;'>v{self.update_info.version}</b>"
-        if self.update_info.formatted_size_mb:
-            ver_text += f" &nbsp;•&nbsp; Размер: {self.update_info.formatted_size_mb}"
+        size_str = self.update_info.formatted_portable_size_mb if (is_portable and self.update_info.formatted_portable_size_mb) else self.update_info.formatted_size_mb
+        if size_str:
+            ver_text += f" &nbsp;•&nbsp; Размер: {size_str}"
+        if is_portable:
+            ver_text += " &nbsp;•&nbsp; <b style='color: #f9e2af;'>Портативная</b>"
         lbl_ver = QLabel(ver_text)
         lbl_ver.setStyleSheet("font-size: 13px; color: #a6adc8;")
         title_vbox.addWidget(lbl_ver)
@@ -210,8 +218,27 @@ class UpdateDialog(QDialog):
         webbrowser.open(self.update_info.html_url)
 
     def on_update_clicked(self):
-        if not self.update_info.installer_url:
-            # Если прямой ссылки на установщик нет в релизе, открываем браузер
+        is_portable = getattr(sys, "frozen", False) and not is_running_as_installed_app()
+        if is_portable and self.update_info.portable_url:
+            download_url = self.update_info.portable_url
+            file_name = self.update_info.portable_name or f"PrintPDF_v{self.update_info.version}_Portable.zip"
+            expected_size = self.update_info.portable_size
+            expected_sha256 = self.update_info.portable_sha256
+            self._download_kind = "portable"
+        elif self.update_info.installer_url:
+            download_url = self.update_info.installer_url
+            file_name = self.update_info.installer_name or f"PrintPDF_Setup_v{self.update_info.version}.exe"
+            expected_size = self.update_info.installer_size
+            expected_sha256 = self.update_info.installer_sha256
+            self._download_kind = "installer"
+        elif self.update_info.portable_url:
+            download_url = self.update_info.portable_url
+            file_name = self.update_info.portable_name or f"PrintPDF_v{self.update_info.version}_Portable.zip"
+            expected_size = self.update_info.portable_size
+            expected_sha256 = self.update_info.portable_sha256
+            self._download_kind = "portable"
+        else:
+            # Если прямой ссылки нет в релизе, открываем браузер
             webbrowser.open(self.update_info.html_url)
             self.accept()
             return
@@ -224,31 +251,31 @@ class UpdateDialog(QDialog):
         self.btn_remind_later.clicked.connect(self.on_cancel_download)
 
         temp_dir = tempfile.gettempdir()
-        file_name = self.update_info.installer_name or f"PrintPDF_Setup_v{self.update_info.version}.exe"
         target_path = os.path.join(temp_dir, file_name)
 
         self.download_worker = DownloadWorker(
-            self.update_info.installer_url,
+            download_url,
             target_path,
-            expected_size=self.update_info.installer_size,
-            expected_sha256=self.update_info.installer_sha256,
+            expected_size=expected_size,
+            expected_sha256=expected_sha256,
         )
         self.download_worker.progress.connect(self.on_download_progress)
         self.download_worker.finished.connect(self.on_download_finished)
         self.download_worker.start()
 
     def on_download_progress(self, downloaded: int, total: int):
+        kind_name = "обновления" if getattr(self, "_download_kind", "") == "portable" else "установщика"
         if total > 0:
             percent = int((downloaded / total) * 100)
             self.progress_bar.setValue(percent)
             down_mb = downloaded / (1024 * 1024)
             tot_mb = total / (1024 * 1024)
-            self.lbl_progress_status.setText(f"Скачивание установщика: {down_mb:.1f} МБ из {tot_mb:.1f} МБ ({percent}%)")
+            self.lbl_progress_status.setText(f"Скачивание {kind_name}: {down_mb:.1f} МБ из {tot_mb:.1f} МБ ({percent}%)")
         else:
             down_mb = downloaded / (1024 * 1024)
             self.lbl_progress_status.setText(f"Скачано: {down_mb:.1f} МБ...")
 
-    def on_download_finished(self, success: bool, installer_path: str, reason: str = ""):
+    def on_download_finished(self, success: bool, downloaded_path: str, reason: str = ""):
         if not success:
             if reason:
                 self.lbl_progress_status.setText(f"❌ Обновление скачалось с ошибкой ({reason}). Попробуйте ещё раз.")
@@ -259,30 +286,51 @@ class UpdateDialog(QDialog):
             self.btn_remind_later.setText("Закрыть")
             return
 
-        self.lbl_progress_status.setText("✅ Установщик загружен. Запуск обновления...")
         self.progress_bar.setValue(100)
 
         # Если запущено из исходного кода Python (режим разработки)
         if not getattr(sys, "frozen", False):
+            self.lbl_progress_status.setText("✅ Файл обновления загружен.")
             QMessageBox.information(
                 self,
                 "Обновление загружено",
-                f"Установщик сохранён:\n{installer_path}\n\n"
+                f"Файл обновления сохранён:\n{downloaded_path}\n\n"
                 "Так как вы запускаете программу из исходного кода Python,\n"
                 "для обновления достаточно выполнить 'git pull' в терминале."
             )
             self.accept()
             return
 
-        # Запускаем фоновую установку и закрываем приложение
-        ok = apply_update_and_restart(installer_path, silent=True)
+        # Портативная версия: обновляем файлы на месте и перезапускаем
+        if getattr(self, "_download_kind", "") == "portable" or (not is_running_as_installed_app()):
+            self.lbl_progress_status.setText("✅ Обновление загружено. Обновление файлов и перезапуск...")
+            QApplication.processEvents()
+            exe_dir = os.path.abspath(os.path.dirname(sys.executable))
+            ok = apply_portable_update_and_restart(downloaded_path, exe_dir)
+            if ok:
+                QApplication.quit()
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Ошибка обновления",
+                    f"Не удалось запустить автоматическое обновление портативной версии.\n"
+                    f"Архив сохранён:\n{downloaded_path}\n\n"
+                    f"Вы можете распаковать его вручную в папку:\n{exe_dir}"
+                )
+                self.accept()
+            return
+
+        # Установленная версия: запускаем инсталлятор
+        self.lbl_progress_status.setText("✅ Установщик загружен. Запуск обновления...")
+        QApplication.processEvents()
+        ok = apply_update_and_restart(downloaded_path, silent=True)
         if ok:
             QApplication.quit()
         else:
             QMessageBox.warning(
                 self,
                 "Ошибка запуска",
-                f"Не удалось запустить автоматический установщик.\nВы можете запустить его вручную:\n{installer_path}"
+                f"Не удалось запустить автоматический установщик.\nВы можете запустить его вручную:\n{downloaded_path}"
             )
             self.accept()
 

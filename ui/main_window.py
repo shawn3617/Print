@@ -616,6 +616,9 @@ class PrintManagerUI(QMainWindow):
         import time
         import threading
 
+        if not self.config_manager.get("auto_check_updates", True):
+            return
+
         # Проверяем не чаще одного раза в 4 часа
         last_check = float(self.config_manager.get("last_update_check", 0) or 0)
         now = time.time()
@@ -625,13 +628,13 @@ class PrintManagerUI(QMainWindow):
         def _bg_check():
             try:
                 from core.updater import check_for_updates
-                info = check_for_updates(current_version=APP_VERSION, timeout=4.0)
+                info = check_for_updates(current_version=APP_VERSION, timeout=8.0)
                 self.config_manager.set("last_update_check", now)
                 self.config_manager.save()
                 if info:
-                    QTimer.singleShot(0, lambda: self.on_update_found(info))
-            except Exception:
-                pass
+                    QTimer.singleShot(500, lambda: self.on_update_found(info))
+            except Exception as e:
+                print(f"[Updater] Ошибка фоновой проверки: {e}")
 
         t = threading.Thread(target=_bg_check, daemon=True)
         t.start()
@@ -641,6 +644,8 @@ class PrintManagerUI(QMainWindow):
         self.available_update = update_info
         self.btn_update_alert.setText(f"✨ Доступно v{update_info.version}")
         self.btn_update_alert.setVisible(True)
+        # Открываем диалог обновления, чтобы пользователь сразу увидел список изменений
+        self.show_update_dialog()
 
     def apply_initial_config(self):
         """Применяет сохраненные настройки из config.json к элементам интерфейса."""
