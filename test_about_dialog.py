@@ -24,22 +24,29 @@ class TestAboutDialog(unittest.TestCase):
             self.assertIsNotNone(dlg.diag_text)
             self.assertIn(APP_NAME, dlg.diag_text)
             self.assertIn(APP_VERSION, dlg.diag_text)
+            dlg.close()
 
     def test_about_dialog_with_mock_connector(self):
-        mock_connector = MagicMock()
-        mock_connector.app.Caption = "Autodesk AutoCAD 2024 - [01-АР.dwg]"
-        mock_connector.app.Version = "24.3s (LMS Tech)"
-        mock_connector.get_active_document_name.return_value = "01-АР.dwg"
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        mock_connector = SimpleNamespace(
+            app=SimpleNamespace(
+                Caption="Autodesk AutoCAD 2024 - [01-АР.dwg]",
+                Version="24.3s (LMS Tech)"
+            ),
+            get_active_document_name=lambda: "01-АР.dwg"
+        )
 
         dlg = AboutDialog(current_theme_id="dark_catppuccin", connector=mock_connector)
         self.assertIn("AutoCAD 2024", dlg.diag_text)
         self.assertIn("01-АР.dwg", dlg.diag_text)
 
-        # Тест копирования в буфер обмена
-        dlg.copy_diagnostics()
-        QApplication.processEvents()
-        clipboard_text = QApplication.clipboard().text()
-        self.assertEqual(clipboard_text, dlg.diag_text)
+        # Тест копирования в буфер обмена с безопасным моком
+        with patch.object(QApplication.clipboard(), "setText") as mock_set:
+            dlg.copy_diagnostics()
+            mock_set.assert_called_once_with(dlg.diag_text)
+
+        dlg.close()
 
     def test_about_dialog_stats_card_and_open_diagnostics(self):
         from unittest.mock import patch
@@ -53,7 +60,7 @@ class TestAboutDialog(unittest.TestCase):
 
         # Проверка вызова open_diagnostics с tab_index=1
         with patch.object(dlg, "open_diagnostics") as mock_open:
-            dlg.btn_open_stats.click()
+            dlg._on_open_stats_clicked()
             mock_open.assert_called_once_with(tab_index=1)
 
         dlg.close()

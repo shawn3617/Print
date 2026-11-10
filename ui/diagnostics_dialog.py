@@ -74,6 +74,13 @@ class DiagnosticsDialog(QDialog):
         self.refresh_logs()
         self.refresh_stats()
 
+    def closeEvent(self, event):
+        if hasattr(self, "refresh_timer") and self.refresh_timer and self.refresh_timer.isActive():
+            self.refresh_timer.stop()
+        if hasattr(self, "_status_timer") and self._status_timer and self._status_timer.isActive():
+            self._status_timer.stop()
+        super().closeEvent(event)
+
     def init_ui(self):
         theme = self._get_theme()
         accent = theme.get("accent_color", "#89b4fa")
@@ -398,29 +405,37 @@ class DiagnosticsDialog(QDialog):
         if self.txt_stats.toPlainText() != rep_text:
             self.txt_stats.setPlainText(rep_text)
 
+    def _on_status_timeout(self):
+        if hasattr(self, "lbl_status"):
+            self.lbl_status.setText("")
+
+    def _set_status_with_timeout(self, text: str, timeout_ms: int = 2000):
+        self.lbl_status.setText(text)
+        if hasattr(self, "_status_timer") and self._status_timer:
+            self._status_timer.stop()
+        self._status_timer = QTimer(self)
+        self._status_timer.setSingleShot(True)
+        self._status_timer.timeout.connect(self._on_status_timeout)
+        self._status_timer.start(timeout_ms)
+
     def on_clear_clicked(self):
         clear_log_buffer()
         self.txt_logs.clear()
-        self.lbl_status.setText("Журнал очищен")
-        QTimer.singleShot(2000, lambda: self.lbl_status.setText(""))
+        self._set_status_with_timeout("Журнал очищен", 2000)
 
     def on_copy_report_clicked(self):
         report = build_diagnostic_report(self.extra_info)
         clipboard = QApplication.clipboard()
         if clipboard:
             clipboard.setText(report)
-
-        self.lbl_status.setText("✓ Отчёт скопирован в буфер обмена!")
-        QTimer.singleShot(3000, lambda: self.lbl_status.setText(""))
+        self._set_status_with_timeout("✓ Отчёт скопирован в буфер обмена!", 3000)
 
     def on_copy_stats_clicked(self):
         report = self.stats_manager.get_formatted_report()
         clipboard = QApplication.clipboard()
         if clipboard:
             clipboard.setText(report)
-
-        self.lbl_status.setText("✓ Статистика скопирована в буфер обмена!")
-        QTimer.singleShot(3000, lambda: self.lbl_status.setText(""))
+        self._set_status_with_timeout("✓ Статистика скопирована в буфер обмена!", 3000)
 
     def on_reset_stats_clicked(self):
         res = QMessageBox.question(
@@ -433,8 +448,7 @@ class DiagnosticsDialog(QDialog):
         if res == QMessageBox.StandardButton.Yes:
             self.stats_manager.reset_stats()
             self.refresh_stats()
-            self.lbl_status.setText("Статистика сброшена")
-            QTimer.singleShot(2000, lambda: self.lbl_status.setText(""))
+            self._set_status_with_timeout("Статистика сброшена", 2000)
 
     def on_open_folder_clicked(self):
         path = get_log_file_path()

@@ -171,7 +171,7 @@ class AboutDialog(QDialog):
         self.btn_open_stats.setProperty("cssClass", "btn_tool")
         self.btn_open_stats.setToolTip("Открыть детальную статистику стабильности и эффективности (F2)")
         self.btn_open_stats.setStyleSheet("padding: 2px 8px; font-size: 11px;")
-        self.btn_open_stats.clicked.connect(lambda: self.open_diagnostics(tab_index=1))
+        self.btn_open_stats.clicked.connect(self._on_open_stats_clicked)
         stats_hdr.addWidget(self.btn_open_stats)
         stats_layout.addLayout(stats_hdr)
 
@@ -318,6 +318,9 @@ class AboutDialog(QDialog):
         except Exception:
             return "Статистика доступна в окне «Диагностика»"
 
+    def _on_open_stats_clicked(self):
+        self.open_diagnostics(tab_index=1)
+
     def open_diagnostics(self, tab_index: int = 0):
         from ui.diagnostics_dialog import DiagnosticsDialog
         dlg = DiagnosticsDialog(
@@ -327,12 +330,26 @@ class AboutDialog(QDialog):
         )
         dlg.exec()
 
+    def _on_copy_timeout(self):
+        if hasattr(self, "btn_copy_info"):
+            self.btn_copy_info.setText("📋 Скопировать")
+
     def copy_diagnostics(self):
         clipboard = QApplication.clipboard()
         if clipboard:
             clipboard.setText(self.diag_text)
             self.btn_copy_info.setText("✓ Скопировано")
-            QTimer.singleShot(2000, lambda: self.btn_copy_info.setText("📋 Скопировать"))
+            if hasattr(self, "_copy_timer") and self._copy_timer:
+                self._copy_timer.stop()
+            self._copy_timer = QTimer(self)
+            self._copy_timer.setSingleShot(True)
+            self._copy_timer.timeout.connect(self._on_copy_timeout)
+            self._copy_timer.start(2000)
+
+    def closeEvent(self, event):
+        if hasattr(self, "_copy_timer") and self._copy_timer and self._copy_timer.isActive():
+            self._copy_timer.stop()
+        super().closeEvent(event)
 
     def showEvent(self, event):
         super().showEvent(event)
