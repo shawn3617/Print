@@ -301,8 +301,8 @@ class UpdateDialog(QDialog):
             self.accept()
             return
 
-        # Портативная версия: обновляем файлы на месте и перезапускаем
-        if getattr(self, "_download_kind", "") == "portable" or (not is_running_as_installed_app()):
+        # Портативная версия: обновляем файлы на месте и перезапускаем только если скачан ZIP-архив
+        if downloaded_path.lower().endswith(".zip"):
             self.lbl_progress_status.setText("✅ Обновление загружено. Обновление файлов и перезапуск...")
             QApplication.processEvents()
             exe_dir = os.path.abspath(os.path.dirname(sys.executable))
@@ -320,7 +320,7 @@ class UpdateDialog(QDialog):
                 self.accept()
             return
 
-        # Установленная версия: запускаем инсталлятор
+        # Установщик .exe: запускаем мастер установки
         self.lbl_progress_status.setText("✅ Установщик загружен. Запуск обновления...")
         QApplication.processEvents()
         ok = apply_update_and_restart(downloaded_path, silent=False)

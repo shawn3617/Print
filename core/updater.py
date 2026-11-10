@@ -415,9 +415,10 @@ try {{
     Remove-Item -Path $extractDir -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -Path $ZipPath -Force -ErrorAction SilentlyContinue
 
-    # Запускаем обновлённую программу
+    # Запускаем обновлённую программу в активном видимом окне
     if (Test-Path $TargetExe) {{
-        Start-Process -FilePath $TargetExe -WindowStyle Normal
+        $wshell = New-Object -ComObject WScript.Shell
+        $wshell.Run(('"' + $TargetExe + '"'), 1, $false)
     }}
 }} catch {{
     $logFile = Join-Path $env:TEMP "printpdf_portable_update_error.log"
