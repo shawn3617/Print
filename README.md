@@ -37,7 +37,7 @@ python -m venv .venv
 .venv\Scripts\python.exe -m unittest discover -s . -p "test_*.py"
 ```
 
-Около 130 тестов, AutoCAD для них не нужен: COM подменяется. Их же сам запускает
+Более 320 тестов, AutoCAD для них не нужен: COM подменяется. Их же сам запускает
 GitHub Actions на каждый push (вкладка **Actions**). Красный крестик там означает,
 что выпускать версию нельзя.
 
