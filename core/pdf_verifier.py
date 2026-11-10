@@ -62,6 +62,8 @@ class PdfVerificationReport:
     pages: List[PageVerificationInfo] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    bookmarks: List[str] = field(default_factory=list)
+    metadata: Dict[str, str] = field(default_factory=dict)
 
     @property
     def is_valid(self) -> bool:
@@ -96,6 +98,18 @@ class PdfVerificationReport:
             lines.append("Предупреждения:")
             for w in self.warnings:
                 lines.append(f"  ⚠️ {w}")
+        if self.bookmarks:
+            bm_preview = ", ".join(f"«{b}»" for b in self.bookmarks[:4])
+            if len(self.bookmarks) > 4:
+                bm_preview += f" ... (еще {len(self.bookmarks) - 4})"
+            lines.append(f"Закладки ({len(self.bookmarks)} шт.): {bm_preview}")
+        if self.metadata:
+            meta_parts = []
+            for k in ("/Title", "/Author", "/Subject", "/Creator"):
+                if k in self.metadata and self.metadata[k]:
+                    meta_parts.append(f"{k.lstrip('/')}={self.metadata[k]}")
+            if meta_parts:
+                lines.append(f"Метаданные: {'; '.join(meta_parts)}")
         for p in self.pages:
             fmt_str = p.matched_format or f"Пользовательский ({p.width_mm:.1f}x{p.height_mm:.1f})"
             status_ico = "✅" if p.is_valid else "❌"
@@ -218,6 +232,25 @@ def verify_pdf(
         return report
 
     report.total_pages = len(reader.pages)
+
+    try:
+        report.metadata = {str(k): str(v) for k, v in (reader.metadata or {}).items()}
+    except Exception:
+        pass
+
+    try:
+        if reader.outline:
+            def extract_outline(items):
+                titles = []
+                for it in items:
+                    if isinstance(it, list):
+                        titles.extend(extract_outline(it))
+                    elif hasattr(it, "title"):
+                        titles.append(str(it.title))
+                return titles
+            report.bookmarks = extract_outline(reader.outline)
+    except Exception:
+        pass
 
     if report.total_pages == 0:
         report.errors.append("В PDF-файле отсутствуют страницы (0 страниц)")

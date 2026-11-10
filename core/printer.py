@@ -37,6 +37,92 @@ def _warn(what: str, e: Exception = None) -> None:
         log_warn(msg, module="Печать")
 
 
+def format_bookmark_title(sheet_number: str, sheet_name: str, page_index: int = 0) -> str:
+    """
+    Формирует понятное название закладки для оглавления многостраничного PDF:
+    Например: '03 — Ведомость марок' или 'Титульный лист'.
+    """
+    s_num = str(sheet_number or "").strip()
+    s_name = str(sheet_name or "").strip()
+
+    if s_name.lower() in ("unknown", "без имени", "нет"):
+        s_name = ""
+
+    # Если номер чисто числовой, дополняем ведущим нулём до 2 цифр (ГОСТ: 01, 02, 03...)
+    if s_num.isdigit():
+        formatted_num = f"{int(s_num):02d}"
+    else:
+        formatted_num = s_num
+
+    if formatted_num and s_name:
+        return f"{formatted_num} — {s_name}"
+    elif formatted_num:
+        return f"Лист {formatted_num}"
+    elif s_name:
+        return s_name
+    else:
+        return f"Лист {page_index + 1}"
+
+
+def build_pdf_metadata(frames: list, doc_name: str = "") -> dict:
+    """
+    Собирает метаданные документа для записи в PDF:
+    - /Title: наименование объекта строительства и шифр
+    - /Author: обозначение документа (шифр)
+    - /Subject: здание/сооружение или назначение тома
+    - /Creator: версия программы PrintPDF
+    - /Producer: PrintPDF
+    """
+    try:
+        from core.version import APP_VERSION
+    except Exception:
+        APP_VERSION = "1.3.4"
+
+    object_names = [f.object_name.strip() for f in frames if getattr(f, "object_name", None) and f.object_name.strip()]
+    building_names = [f.building_name.strip() for f in frames if getattr(f, "building_name", None) and f.building_name.strip()]
+    doc_codes = [f.doc_code.strip() for f in frames if getattr(f, "doc_code", None) and f.doc_code.strip()]
+
+    obj_name = object_names[0] if object_names else ""
+    bld_name = building_names[0] if building_names else ""
+    doc_code = doc_codes[0] if doc_codes else ""
+
+    title_parts = []
+    if obj_name:
+        title_parts.append(obj_name)
+    if bld_name and bld_name != obj_name:
+        title_parts.append(bld_name)
+    if doc_code:
+        title_parts.append(f"({doc_code})")
+    elif not title_parts and doc_name:
+        title_parts.append(os.path.splitext(os.path.basename(doc_name))[0])
+
+    title = " — ".join(title_parts) if title_parts else "Комплект проектной документации"
+
+    metadata = {
+        "/Title": title,
+        "/Creator": f"PrintPDF v{APP_VERSION}",
+        "/Producer": f"PrintPDF v{APP_VERSION}"
+    }
+    if doc_code:
+        metadata["/Author"] = doc_code
+    if bld_name:
+        metadata["/Subject"] = bld_name
+    elif obj_name:
+        metadata["/Subject"] = obj_name
+
+    keywords = []
+    if doc_code:
+        keywords.append(doc_code)
+    if obj_name:
+        keywords.append(obj_name)
+    if bld_name:
+        keywords.append(bld_name)
+    if keywords:
+        metadata["/Keywords"] = ", ".join(keywords)
+
+    return metadata
+
+
 class BatchPrinter:
     def __init__(self, doc, connector=None):
         self.doc = doc
@@ -393,6 +479,7 @@ class BatchPrinter:
             temp_dir = tempfile.mkdtemp(prefix="acad_print_")
             
         temp_files = []
+        temp_entries = []
         total_steps = len(frames) + (1 if merge_pdf else 0)
         original_active_layout_name = None
         try:
@@ -705,6 +792,7 @@ class BatchPrinter:
                 if frame_success:
                     if merge_pdf and filepath:
                         temp_files.append(filepath)
+                        temp_entries.append((filepath, frame))
                     report.items.append(PrintItemResult(
                         frame=frame,
                         success=True,
@@ -773,8 +861,13 @@ class BatchPrinter:
                     raise PrintCancelledError("Печать отменена пользователем.")
                     
                 merger = PdfWriter()
-                for pdf_file in temp_files:
-                    merger.append(pdf_file)
+                for page_idx, (pdf_file, f_obj) in enumerate(temp_entries):
+                    bm_title = format_bookmark_title(f_obj.sheet_number, f_obj.sheet_name, page_idx)
+                    merger.append(pdf_file, outline_item=bm_title)
+
+                doc_name_str = getattr(self.doc, "Name", "") if self.doc else ""
+                metadata = build_pdf_metadata([f for _, f in temp_entries], doc_name=doc_name_str)
+                merger.add_metadata(metadata)
                     
                 try:
                     merger.write(output_path)
