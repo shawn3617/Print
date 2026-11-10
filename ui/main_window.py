@@ -1,5 +1,6 @@
 import os
 import sys
+from typing import Any, Optional, List, Dict
 
 # Гарантируем корректный импорт модулей core/parsers даже при прямом запуске скрипта
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
