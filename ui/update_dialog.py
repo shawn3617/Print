@@ -323,7 +323,7 @@ class UpdateDialog(QDialog):
         # Установленная версия: запускаем инсталлятор
         self.lbl_progress_status.setText("✅ Установщик загружен. Запуск обновления...")
         QApplication.processEvents()
-        ok = apply_update_and_restart(downloaded_path, silent=True)
+        ok = apply_update_and_restart(downloaded_path, silent=False)
         if ok:
             QApplication.quit()
         else:

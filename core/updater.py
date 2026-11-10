@@ -275,13 +275,25 @@ def is_running_as_installed_app() -> bool:
     return exe_dir == expected_dir
 
 
-def apply_update_and_restart(installer_path: str, silent: bool = True) -> bool:
+def apply_update_and_restart(installer_path: str, silent: bool = False) -> bool:
     """
     Запускает скачанный инсталлятор в фоновом процессе с автоперезапуском программы.
+    По умолчанию (silent=False) запускает инсталлятор через os.startfile (или видимый процесс),
+    чтобы пользователь видел процесс обновления и окна подтверждений Windows (UAC/SmartScreen).
     После запуска инсталлятора текущая программа должна завершить работу.
     """
     if not os.path.exists(installer_path):
         return False
+
+    abs_installer = os.path.abspath(installer_path)
+
+    # Стандартный запуск установщика Windows (с подтверждением UAC при необходимости)
+    if not silent:
+        try:
+            os.startfile(abs_installer)
+            return True
+        except Exception as e:
+            print(f"[Updater] os.startfile не сработал ({e}), используем запуск через PowerShell")
 
     local_appdata = os.environ.get("LOCALAPPDATA", "")
     target_exe = os.path.join(local_appdata, "Programs", "PrintPDF", "PrintPDF.exe")
@@ -289,7 +301,7 @@ def apply_update_and_restart(installer_path: str, silent: bool = True) -> bool:
     # Inno Setup: /SILENT показывает аккуратный прогресс установки, /NORESTART
     silent_args = "/SILENT /NORESTART" if silent else ""
 
-    safe_installer = os.path.abspath(installer_path).replace("'", "''")
+    safe_installer = abs_installer.replace("'", "''")
     safe_target_exe = os.path.abspath(target_exe).replace("'", "''")
 
     batch_cmd = [
