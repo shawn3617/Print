@@ -41,6 +41,23 @@ class TestAboutDialog(unittest.TestCase):
         clipboard_text = QApplication.clipboard().text()
         self.assertEqual(clipboard_text, dlg.diag_text)
 
+    def test_about_dialog_stats_card_and_open_diagnostics(self):
+        from unittest.mock import patch
+        from core.stats_manager import get_stats_manager
+
+        sm = get_stats_manager()
+        sm.reset_stats()
+
+        dlg = AboutDialog(current_theme_id="dark_catppuccin")
+        self.assertIn("Листов напечатано: 0", dlg.lbl_stats_body.text())
+
+        # Проверка вызова open_diagnostics с tab_index=1
+        with patch.object(dlg, "open_diagnostics") as mock_open:
+            dlg.btn_open_stats.click()
+            mock_open.assert_called_once_with(tab_index=1)
+
+        dlg.close()
+
 
 if __name__ == "__main__":
     unittest.main()

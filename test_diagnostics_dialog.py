@@ -102,6 +102,51 @@ class TestDiagnosticsDialog(unittest.TestCase):
 
         win.close()
 
+    def test_stats_tab_and_copy_reset(self):
+        from core.stats_manager import get_stats_manager
+        from core.report_models import PrintReport, PrintItemResult
+        from core.models import Frame
+        from PySide6.QtWidgets import QMessageBox
+
+        sm = get_stats_manager()
+        sm.reset_stats()
+        rep = PrintReport(
+            total_requested=2,
+            success_count=2,
+            failed_count=0,
+            fallback_count=1,
+            duration_seconds=6.0,
+            items=[
+                PrintItemResult(frame=Frame(1, "1", "План", (0, 0, 0), (420, 297, 0), "SPDS", "A3"), success=True),
+                PrintItemResult(frame=Frame(2, "2", "Разрез", (0, 0, 0), (420, 297, 0), "SPDS", "A3"), success=True, fallback_used=True)
+            ]
+        )
+        sm.record_print_batch(rep)
+
+        dlg = DiagnosticsDialog(current_theme_id="dark_catppuccin", initial_tab=1)
+        self.assertEqual(dlg.tab_widget.currentIndex(), 1)
+        self.assertEqual(dlg.lbl_card_sheets_val.text(), "2")
+        self.assertIn("100.0%", dlg.lbl_card_rate_val.text())
+        self.assertIn("4 мин", dlg.lbl_card_time_val.text())
+        self.assertIn("СТАТИСТИКА ИСПОЛЬЗОВАНИЯ", dlg.txt_stats.toPlainText())
+
+        # Копирование статистики
+        with patch.object(QApplication.clipboard(), "setText") as mock_set:
+            dlg.on_copy_stats_clicked()
+            mock_set.assert_called_once()
+            copied = mock_set.call_args[0][0]
+            self.assertIn("СТАТИСТИКА ИСПОЛЬЗОВАНИЯ И ЭФФЕКТИВНОСТИ", copied)
+            self.assertIn("Успешно напечатано:        2", copied)
+
+        # Сброс статистики (пользователь соглашается)
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+            dlg.on_reset_stats_clicked()
+            self.assertEqual(dlg.lbl_card_sheets_val.text(), "0")
+            self.assertIn("0.0%", dlg.lbl_card_rate_val.text())
+            self.assertIn("0 мин", dlg.lbl_card_time_val.text())
+
+        dlg.close()
+
 
 if __name__ == "__main__":
     unittest.main()

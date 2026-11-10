@@ -31,7 +31,7 @@ if "%ISCC_EXE%"=="" (
 
 echo.
 echo ========================================================
-echo Шаг 1/4: Компиляция AutoLISP в защищенные бинарники .fas
+echo Шаг 1/5: Компиляция AutoLISP в защищенные бинарники .fas
 echo ========================================================
 python scripts\compile_lisp.py
 if %ERRORLEVEL% NEQ 0 (
@@ -40,7 +40,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo.
 echo ========================================================
-echo Шаг 2/4: Сборка автономного приложения PyInstaller
+echo Шаг 2/5: Сборка автономного приложения PyInstaller
 echo Режим окна: %WINDOW_MODE%
 echo ========================================================
 
@@ -79,7 +79,7 @@ if exist "ИНСТРУКЦИЯ_ПО_ЗАПУСКУ.txt" (
 
 echo.
 echo ========================================================
-echo Шаг 3/4: Создание Portable ZIP-архива для коллег
+echo Шаг 3/5: Создание Portable ZIP-архива для коллег
 echo ========================================================
 python -c "import shutil; shutil.make_archive('dist/PrintPDF_v%APP_VER%_Portable', 'zip', 'dist', 'PrintPDF')"
 if %ERRORLEVEL% EQU 0 (
@@ -90,24 +90,37 @@ if %ERRORLEVEL% EQU 0 (
 
 echo.
 echo ========================================================
-echo Шаг 4/4: Сборка инсталлятора Windows Inno Setup
+echo Шаг 4/5: Сборка инсталлятора Windows Inno Setup
 echo ========================================================
 
-if "%ISCC_EXE%"=="" goto NO_ISCC
+if "%ISCC_EXE%"=="" (
+  echo [ПРЕДУПРЕЖДЕНИЕ] Компилятор Inno Setup не найден. Создание инсталлятора пропущено.
+) else (
+  echo Используется компилятор: "%ISCC_EXE%"
+  "%ISCC_EXE%" /DMyAppVersion=%APP_VER% "installer\setup.iss"
+  if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo [ОШИБКА] Не удалось собрать инсталлятор Inno Setup. Код ошибки: %ERRORLEVEL%
+    goto END
+  )
+)
 
-echo Используется компилятор: "%ISCC_EXE%"
-"%ISCC_EXE%" /DMyAppVersion=%APP_VER% "installer\setup.iss"
+echo.
+echo ========================================================
+echo Шаг 5/5: Цифровая подпись исполняемых файлов (Authenticode)
+echo ========================================================
+python scripts\sign_binary.py "dist\PrintPDF\PrintPDF.exe" "dist\PrintPDF_Setup_v%APP_VER%.exe"
 if %ERRORLEVEL% NEQ 0 (
-  echo.
-  echo [ОШИБКА] Не удалось собрать инсталлятор Inno Setup. Код ошибки: %ERRORLEVEL%
-  goto END
+  echo [ПРЕДУПРЕЖДЕНИЕ] Ошибки при цифровой подписи файлов.
 )
 
 echo.
 echo ========================================================
 echo [УСПЕХ] Полный цикл сборки успешно завершен!
 echo.
-echo 1. Установочный пакет: dist\PrintPDF_Setup_v%APP_VER%.exe
+if exist "dist\PrintPDF_Setup_v%APP_VER%.exe" (
+  echo 1. Установочный пакет: dist\PrintPDF_Setup_v%APP_VER%.exe
+)
 echo 2. Портативный ZIP:    dist\PrintPDF_v%APP_VER%_Portable.zip
 echo 3. Портативная папка:  dist\PrintPDF\
 echo ========================================================

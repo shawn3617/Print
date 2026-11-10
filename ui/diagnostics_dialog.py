@@ -1,7 +1,8 @@
 """
-Диалоговое окно «Диагностика» PrintPDF.
-Отображает журнал событий в реальном времени, позволяет скопировать полный отчёт
-для разработчика и быстро открыть папку с логами на диске.
+Диалоговое окно «Диагностика и статистика» PrintPDF.
+Отображает журнал событий в реальном времени, локальную статистику стабильности
+и эффективности, позволяет скопировать полный отчёт для разработчика
+и быстро открыть папку с логами на диске.
 """
 
 import os
@@ -9,10 +10,10 @@ import sys
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QWidget, QFrame, QApplication, QPlainTextEdit,
-    QComboBox, QCheckBox, QMessageBox
+    QComboBox, QCheckBox, QMessageBox, QTabWidget, QGridLayout
 )
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QIcon, QFont, QTextCharFormat, QColor
+from PySide6.QtGui import QIcon, QFont
 
 from core.resource_utils import get_resource_path
 from core.version import APP_VERSION
@@ -22,19 +23,28 @@ from core.logger import (
     clear_log_buffer,
     build_diagnostic_report
 )
+from core.stats_manager import get_stats_manager
 from ui.themes import THEMES, build_theme_qss, apply_title_bar_theme
 
 
 class DiagnosticsDialog(QDialog):
-    def __init__(self, current_theme_id: str = "dark_catppuccin", connector=None, parent=None, extra_info: dict = None):
+    def __init__(
+        self,
+        current_theme_id: str = "dark_catppuccin",
+        connector=None,
+        parent=None,
+        extra_info: dict = None,
+        initial_tab: int = 0
+    ):
         super().__init__(parent)
         self.current_theme_id = current_theme_id
         self.connector = connector
         self.extra_info = extra_info or {}
+        self.stats_manager = get_stats_manager()
 
-        self.setWindowTitle("Диагностика и журнал событий — PrintPDF")
-        self.resize(760, 560)
-        self.setMinimumSize(600, 420)
+        self.setWindowTitle("Диагностика и статистика — PrintPDF")
+        self.resize(780, 580)
+        self.setMinimumSize(640, 440)
         self.setModal(False)
 
         icon_path = get_resource_path("autocad_to_pdf_icon.ico")
@@ -43,7 +53,12 @@ class DiagnosticsDialog(QDialog):
 
         self.setStyleSheet(build_theme_qss(self.current_theme_id))
         self.init_ui()
+
+        if 0 <= initial_tab < self.tab_widget.count():
+            self.tab_widget.setCurrentIndex(initial_tab)
+
         self.refresh_logs()
+        self.refresh_stats()
 
         # Таймер для автообновления списка событий каждые 1.5 сек
         self.refresh_timer = QTimer(self)
@@ -57,6 +72,7 @@ class DiagnosticsDialog(QDialog):
         super().showEvent(event)
         apply_title_bar_theme(self, self.current_theme_id)
         self.refresh_logs()
+        self.refresh_stats()
 
     def init_ui(self):
         theme = self._get_theme()
@@ -64,7 +80,7 @@ class DiagnosticsDialog(QDialog):
         text_primary = theme.get("text_primary", "#cdd6f4")
         text_muted = theme.get("text_muted", "#a6adc8")
         bg_card = theme.get("bg_card", "#181825")
-        border_color = theme.get("border_color", "#45475a")
+        border_color = theme.get("border", theme.get("border_color", "#45475a"))
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 16, 18, 16)
@@ -74,18 +90,18 @@ class DiagnosticsDialog(QDialog):
         header_layout = QHBoxLayout()
         header_layout.setSpacing(10)
 
-        lbl_icon = QLabel("🐞")
+        lbl_icon = QLabel("📊")
         lbl_icon.setStyleSheet("font-size: 26px;")
         header_layout.addWidget(lbl_icon)
 
         title_vbox = QVBoxLayout()
         title_vbox.setSpacing(2)
-        lbl_title = QLabel("Журнал диагностики и событий")
+        lbl_title = QLabel("Диагностика и статистика работы")
         lbl_title.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {accent};")
         title_vbox.addWidget(lbl_title)
 
         log_path = get_log_file_path()
-        lbl_subtitle = QLabel(f"Файл лога: {log_path}")
+        lbl_subtitle = QLabel(f"Журнал: {log_path}")
         lbl_subtitle.setStyleSheet(f"font-size: 11px; color: {text_muted};")
         lbl_subtitle.setWordWrap(True)
         title_vbox.addWidget(lbl_subtitle)
@@ -94,7 +110,48 @@ class DiagnosticsDialog(QDialog):
         header_layout.addStretch()
         layout.addLayout(header_layout)
 
-        # 2. Панель фильтров и управления
+        # 2. Вкладки: Журнал событий | Статистика использования
+        self.tab_widget = QTabWidget()
+        layout.addWidget(self.tab_widget, stretch=1)
+
+        # Вкладка 1: Журнал событий
+        tab_logs = QWidget()
+        self._init_logs_tab(tab_logs, theme)
+        self.tab_widget.addTab(tab_logs, "📋 Журнал событий")
+
+        # Вкладка 2: Статистика использования
+        tab_stats = QWidget()
+        self._init_stats_tab(tab_stats, theme)
+        self.tab_widget.addTab(tab_stats, "📊 Статистика использования")
+
+        # 3. Нижняя общая полоса кнопок
+        bottom_layout = QHBoxLayout()
+        bottom_layout.setSpacing(10)
+
+        self.lbl_status = QLabel("")
+        self.lbl_status.setStyleSheet("color: #a6e3a1; font-weight: bold; font-size: 11px;")
+        bottom_layout.addWidget(self.lbl_status)
+
+        bottom_layout.addStretch()
+
+        self.btn_close = QPushButton("Закрыть")
+        self.btn_close.setProperty("cssClass", "btn_tool")
+        self.btn_close.clicked.connect(self.close)
+        bottom_layout.addWidget(self.btn_close)
+
+        layout.addLayout(bottom_layout)
+
+    def _init_logs_tab(self, tab: QWidget, theme: dict):
+        text_primary = theme.get("text_primary", "#cdd6f4")
+        accent = theme.get("accent_color", "#89b4fa")
+        bg_card = theme.get("bg_card", "#181825")
+        border_color = theme.get("border", theme.get("border_color", "#45475a"))
+
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        # Панель фильтров
         filter_layout = QHBoxLayout()
         filter_layout.setSpacing(10)
 
@@ -129,7 +186,7 @@ class DiagnosticsDialog(QDialog):
 
         layout.addLayout(filter_layout)
 
-        # 3. Текстовое поле для логов
+        # Поле для логов
         self.txt_logs = QPlainTextEdit()
         self.txt_logs.setReadOnly(True)
         font = QFont("Consolas", 10)
@@ -147,9 +204,9 @@ class DiagnosticsDialog(QDialog):
         """)
         layout.addWidget(self.txt_logs, stretch=1)
 
-        # 4. Нижняя панель кнопок
-        bottom_layout = QHBoxLayout()
-        bottom_layout.setSpacing(10)
+        # Нижние кнопки вкладки логов
+        btns_layout = QHBoxLayout()
+        btns_layout.setSpacing(10)
 
         self.btn_copy_report = QPushButton("📋 Скопировать отчёт для разработчика")
         self.btn_copy_report.setStyleSheet(f"""
@@ -166,25 +223,119 @@ class DiagnosticsDialog(QDialog):
             }}
         """)
         self.btn_copy_report.clicked.connect(self.on_copy_report_clicked)
-        bottom_layout.addWidget(self.btn_copy_report)
+        btns_layout.addWidget(self.btn_copy_report)
 
         self.btn_open_folder = QPushButton("📂 Открыть папку с логами")
         self.btn_open_folder.setProperty("cssClass", "btn_tool")
         self.btn_open_folder.clicked.connect(self.on_open_folder_clicked)
-        bottom_layout.addWidget(self.btn_open_folder)
+        btns_layout.addWidget(self.btn_open_folder)
 
-        self.lbl_status = QLabel("")
-        self.lbl_status.setStyleSheet(f"color: #a6e3a1; font-weight: bold; font-size: 11px;")
-        bottom_layout.addWidget(self.lbl_status)
+        btns_layout.addStretch()
+        layout.addLayout(btns_layout)
 
-        bottom_layout.addStretch()
+    def _init_stats_tab(self, tab: QWidget, theme: dict):
+        text_primary = theme.get("text_primary", "#cdd6f4")
+        text_muted = theme.get("text_muted", "#a6adc8")
+        accent = theme.get("accent_color", "#89b4fa")
+        bg_card = theme.get("bg_card", "#181825")
+        border_color = theme.get("border", theme.get("border_color", "#45475a"))
 
-        self.btn_close = QPushButton("Закрыть")
-        self.btn_close.setProperty("cssClass", "btn_tool")
-        self.btn_close.clicked.connect(self.close)
-        bottom_layout.addWidget(self.btn_close)
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
 
-        layout.addLayout(bottom_layout)
+        # Сетка карточек-метрик
+        cards_layout = QGridLayout()
+        cards_layout.setSpacing(8)
+
+        def _create_stat_card(title: str, val_text: str, sub_text: str) -> tuple:
+            card = QFrame()
+            card.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {bg_card};
+                    border: 1px solid {border_color};
+                    border-radius: 6px;
+                    padding: 4px;
+                }}
+            """)
+            card_vbox = QVBoxLayout(card)
+            card_vbox.setContentsMargins(8, 6, 8, 6)
+            card_vbox.setSpacing(2)
+
+            lbl_t = QLabel(title)
+            lbl_t.setStyleSheet(f"font-size: 11px; color: {text_muted}; font-weight: 500;")
+            card_vbox.addWidget(lbl_t)
+
+            lbl_v = QLabel(val_text)
+            lbl_v.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {accent};")
+            card_vbox.addWidget(lbl_v)
+
+            lbl_s = QLabel(sub_text)
+            lbl_s.setStyleSheet(f"font-size: 10px; color: {text_muted};")
+            card_vbox.addWidget(lbl_s)
+
+            return card, lbl_v, lbl_s
+
+        card1, self.lbl_card_sheets_val, self.lbl_card_sheets_sub = _create_stat_card(
+            "🖨️ Листов напечатано", "0", "Успешно: 0 • Ошибок: 0"
+        )
+        card2, self.lbl_card_rate_val, self.lbl_card_rate_sub = _create_stat_card(
+            "🎯 Успешность печати", "0.0%", "Среднее время: 0.0 сек/лист"
+        )
+        card3, self.lbl_card_time_val, self.lbl_card_time_sub = _create_stat_card(
+            "⏱️ Сэкономлено времени", "0 мин", "~2 мин на лист вручную"
+        )
+        card4, self.lbl_card_scan_val, self.lbl_card_scan_sub = _create_stat_card(
+            "🔍 Чертежей обработано", "0 DWG", "Рамок найдено: 0"
+        )
+
+        cards_layout.addWidget(card1, 0, 0)
+        cards_layout.addWidget(card2, 0, 1)
+        cards_layout.addWidget(card3, 0, 2)
+        cards_layout.addWidget(card4, 0, 3)
+
+        layout.addLayout(cards_layout)
+
+        # Текстовое поле детализированного отчета
+        self.txt_stats = QPlainTextEdit()
+        self.txt_stats.setReadOnly(True)
+        font = QFont("Consolas", 10)
+        font.setStyleHint(QFont.StyleHint.Monospace)
+        self.txt_stats.setFont(font)
+        self.txt_stats.setStyleSheet(f"""
+            QPlainTextEdit {{
+                background-color: {bg_card};
+                color: {text_primary};
+                border: 1px solid {border_color};
+                border-radius: 6px;
+                padding: 6px;
+                line-height: 1.3;
+            }}
+        """)
+        layout.addWidget(self.txt_stats, stretch=1)
+
+        # Кнопки вкладки статистики
+        stats_btns_layout = QHBoxLayout()
+        stats_btns_layout.setSpacing(10)
+
+        self.btn_copy_stats = QPushButton("📋 Скопировать статистику")
+        self.btn_copy_stats.setProperty("cssClass", "btn_tool")
+        self.btn_copy_stats.clicked.connect(self.on_copy_stats_clicked)
+        stats_btns_layout.addWidget(self.btn_copy_stats)
+
+        self.btn_refresh_stats = QPushButton("🔄 Обновить")
+        self.btn_refresh_stats.setProperty("cssClass", "btn_tool")
+        self.btn_refresh_stats.clicked.connect(self.refresh_stats)
+        stats_btns_layout.addWidget(self.btn_refresh_stats)
+
+        self.btn_reset_stats = QPushButton("🗑️ Сбросить статистику")
+        self.btn_reset_stats.setProperty("cssClass", "btn_tool")
+        self.btn_reset_stats.setToolTip("Сбросить накопленные локальные счетчики")
+        self.btn_reset_stats.clicked.connect(self.on_reset_stats_clicked)
+        stats_btns_layout.addWidget(self.btn_reset_stats)
+
+        stats_btns_layout.addStretch()
+        layout.addLayout(stats_btns_layout)
 
     def _get_filter_level(self) -> str:
         data = self.combo_level.currentData()
@@ -201,13 +352,15 @@ class DiagnosticsDialog(QDialog):
 
     def _on_timer_refresh(self):
         if self.isVisible():
-            self.refresh_logs()
+            if self.tab_widget.currentIndex() == 0:
+                self.refresh_logs()
+            else:
+                self.refresh_stats()
 
     def refresh_logs(self):
         level_filter = self._get_filter_level()
         logs = get_recent_logs(max_lines=300, level_filter=level_filter or None)
 
-        # Сохраняем позицию курсора если автопрокрутка выключена
         current_text = "\n".join(logs)
         if self.txt_logs.toPlainText() != current_text:
             self.txt_logs.setPlainText(current_text)
@@ -216,6 +369,35 @@ class DiagnosticsDialog(QDialog):
                     self.txt_logs.verticalScrollBar().maximum()
                 )
 
+    def refresh_stats(self):
+        sm = self.stats_manager
+        summary = sm.get_summary()
+
+        total_sheets = summary["total_sheets_printed"]
+        succ_sheets = summary["success_sheets_count"]
+        fail_sheets = summary["failed_sheets_count"]
+        fb_sheets = summary["fallback_format_count"]
+
+        self.lbl_card_sheets_val.setText(str(total_sheets))
+        self.lbl_card_sheets_sub.setText(f"Успешно: {succ_sheets} • Ошибок: {fail_sheets}")
+
+        rate = summary["success_rate"]
+        avg_sec = summary["avg_seconds_per_sheet"]
+        self.lbl_card_rate_val.setText(f"{rate:.1f}%")
+        self.lbl_card_rate_sub.setText(f"Резервных: {fb_sheets} • {avg_sec:.1f} сек/лист")
+
+        time_saved = summary["time_saved_formatted"]
+        self.lbl_card_time_val.setText(time_saved)
+
+        dwg_scanned = summary["total_dwg_scanned"]
+        frames_found = summary["total_frames_found"]
+        self.lbl_card_scan_val.setText(f"{dwg_scanned} DWG")
+        self.lbl_card_scan_sub.setText(f"Рамок найдено: {frames_found}")
+
+        rep_text = sm.get_formatted_report()
+        if self.txt_stats.toPlainText() != rep_text:
+            self.txt_stats.setPlainText(rep_text)
+
     def on_clear_clicked(self):
         clear_log_buffer()
         self.txt_logs.clear()
@@ -223,13 +405,36 @@ class DiagnosticsDialog(QDialog):
         QTimer.singleShot(2000, lambda: self.lbl_status.setText(""))
 
     def on_copy_report_clicked(self):
-        # Собираем свежие диагностические данные
         report = build_diagnostic_report(self.extra_info)
         clipboard = QApplication.clipboard()
-        clipboard.setText(report)
+        if clipboard:
+            clipboard.setText(report)
 
         self.lbl_status.setText("✓ Отчёт скопирован в буфер обмена!")
         QTimer.singleShot(3000, lambda: self.lbl_status.setText(""))
+
+    def on_copy_stats_clicked(self):
+        report = self.stats_manager.get_formatted_report()
+        clipboard = QApplication.clipboard()
+        if clipboard:
+            clipboard.setText(report)
+
+        self.lbl_status.setText("✓ Статистика скопирована в буфер обмена!")
+        QTimer.singleShot(3000, lambda: self.lbl_status.setText(""))
+
+    def on_reset_stats_clicked(self):
+        res = QMessageBox.question(
+            self,
+            "Сброс статистики",
+            "Вы действительно хотите сбросить накопленную локальную статистику стабильности и эффективности?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if res == QMessageBox.StandardButton.Yes:
+            self.stats_manager.reset_stats()
+            self.refresh_stats()
+            self.lbl_status.setText("Статистика сброшена")
+            QTimer.singleShot(2000, lambda: self.lbl_status.setText(""))
 
     def on_open_folder_clicked(self):
         path = get_log_file_path()

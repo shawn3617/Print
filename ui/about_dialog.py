@@ -16,6 +16,7 @@ from PySide6.QtGui import QIcon, QPixmap, QFont
 
 from core.resource_utils import get_resource_path
 from core.version import APP_VERSION, APP_RELEASE_DATE
+from core.stats_manager import get_stats_manager
 from ui.themes import THEMES, build_theme_qss, apply_title_bar_theme
 
 APP_NAME = "AutoCAD Batch PDF Plotter"
@@ -29,7 +30,8 @@ class AboutDialog(QDialog):
         self.connector = connector
 
         self.setWindowTitle(f"О программе — {APP_SUBTITLE}")
-        self.setFixedSize(540, 545)
+        self.resize(550, 610)
+        self.setMinimumSize(500, 480)
         self.setModal(True)
 
         icon_path = get_resource_path("autocad_to_pdf_icon.ico")
@@ -150,7 +152,37 @@ class AboutDialog(QDialog):
 
         layout.addWidget(diag_frame)
 
-        # 4. Блок обратной связи (заготовка)
+        # 4. Карточка статистики использования
+        stats_frame = QFrame()
+        stats_frame.setStyleSheet(
+            f"QFrame {{ background-color: {bg_card}; border: 1px solid {border}; border-radius: 8px; padding: 6px; }}"
+        )
+        stats_layout = QVBoxLayout(stats_frame)
+        stats_layout.setContentsMargins(12, 10, 12, 10)
+        stats_layout.setSpacing(6)
+
+        stats_hdr = QHBoxLayout()
+        lbl_stats_title = QLabel("📊 Статистика использования:")
+        lbl_stats_title.setStyleSheet(f"font-weight: bold; font-size: 12px; color: {accent};")
+        stats_hdr.addWidget(lbl_stats_title)
+        stats_hdr.addStretch()
+
+        self.btn_open_stats = QPushButton("Подробнее...")
+        self.btn_open_stats.setProperty("cssClass", "btn_tool")
+        self.btn_open_stats.setToolTip("Открыть детальную статистику стабильности и эффективности (F2)")
+        self.btn_open_stats.setStyleSheet("padding: 2px 8px; font-size: 11px;")
+        self.btn_open_stats.clicked.connect(lambda: self.open_diagnostics(tab_index=1))
+        stats_hdr.addWidget(self.btn_open_stats)
+        stats_layout.addLayout(stats_hdr)
+
+        self.lbl_stats_body = QLabel(self._build_stats_summary_text())
+        self.lbl_stats_body.setWordWrap(True)
+        self.lbl_stats_body.setStyleSheet(f"font-size: 11px; color: {text_primary};")
+        stats_layout.addWidget(self.lbl_stats_body)
+
+        layout.addWidget(stats_frame)
+
+        # 5. Блок обратной связи (заготовка)
         fb_frame = QFrame()
         fb_frame.setStyleSheet(
             f"QFrame {{ background-color: {bg_card}; border: 1px solid {border}; border-radius: 8px; padding: 6px; }}"
@@ -267,11 +299,31 @@ class AboutDialog(QDialog):
 
         return "\n".join(lines)
 
-    def open_diagnostics(self):
+    def _build_stats_summary_text(self) -> str:
+        try:
+            sm = get_stats_manager()
+            summary = sm.get_summary()
+            sheets = summary.get("total_sheets_printed", 0)
+            rate = summary.get("success_rate", 0.0)
+            saved = summary.get("time_saved_formatted", "0 мин")
+            dwgs = summary.get("total_dwg_scanned", 0)
+            if sheets > 0 or dwgs > 0:
+                return (
+                    f"Напечатано листов: <b>{sheets}</b> • "
+                    f"Успешность: <b>{rate:.1f}%</b> • "
+                    f"Сэкономлено: <b>{saved}</b> • "
+                    f"Обработано DWG: <b>{dwgs}</b>"
+                )
+            return "Листов напечатано: 0 • Успешность: 0.0% • Начните печать для сбора статистики"
+        except Exception:
+            return "Статистика доступна в окне «Диагностика»"
+
+    def open_diagnostics(self, tab_index: int = 0):
         from ui.diagnostics_dialog import DiagnosticsDialog
         dlg = DiagnosticsDialog(
             current_theme_id=getattr(self, "current_theme_id", "dark_catppuccin"),
-            parent=self
+            parent=self,
+            initial_tab=tab_index
         )
         dlg.exec()
 

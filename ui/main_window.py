@@ -33,6 +33,7 @@ from core.filename_template import (
     render_filename,
 )
 from core.profile_manager import ProfileManager, DEFAULT_PROFILE_NAME
+from core.stats_manager import get_stats_manager
 from ui.themes import THEMES, build_theme_qss, get_theme_status_colors, apply_title_bar_theme
 from ui.help_dialog import HelpDialog
 from ui.about_dialog import AboutDialog, APP_VERSION
@@ -207,8 +208,10 @@ class PrintProgressDialog(QDialog):
 class PrintManagerUI(QMainWindow):
     def __init__(self, config_manager=None):
         super().__init__()
+        self.config_manager = config_manager or ConfigManager()
         init_logging()
         log_info(f"Запуск PrintPDF v{APP_VERSION}", module="App")
+        get_stats_manager(config_manager=self.config_manager).record_launch()
         self.setWindowTitle(f"PrintPDF v{APP_VERSION} — AutoCAD Batch PDF Plotter")
         icon_path = get_resource_path("autocad_to_pdf_icon.ico")
         if os.path.exists(icon_path):
@@ -216,7 +219,6 @@ class PrintManagerUI(QMainWindow):
         self.resize(1100, 650)
         self.setMinimumSize(780, 480)
         self.setAcceptDrops(True)
-        self.config_manager = config_manager or ConfigManager()
         self.profile_manager = ProfileManager(self.config_manager)
         self._is_loading_config = True
         self.connector = AutoCADConnector()
@@ -1340,6 +1342,8 @@ class PrintManagerUI(QMainWindow):
             progress_dlg.close()
 
             scan_rep = getattr(self.scanner, "last_scan_report", None)
+            if scan_rep:
+                get_stats_manager().record_scan_batch(scan_rep)
             if scan_rep and scan_rep.cancelled and not new_frames:
                 if scan_rep.failed_files_count > 0:
                     dlg = ReportDialog(scan_rep, current_theme_id=getattr(self, "current_theme", "dark_catppuccin"), parent=self)
@@ -2612,6 +2616,7 @@ class PrintManagerUI(QMainWindow):
 
             # Открываем подробный итоговый отчёт
             if report:
+                get_stats_manager().record_print_batch(report)
                 dlg = ReportDialog(report, current_theme_id=getattr(self, "current_theme", "dark_catppuccin"), parent=self)
                 dlg.repeat_requested.connect(self.on_repeat_failed_frames)
                 dlg.exec()
@@ -2622,6 +2627,8 @@ class PrintManagerUI(QMainWindow):
             progress_dlg.close()
             log_info("Пакетная печать отменена пользователем", module="Printing")
             last_rep = getattr(self.printer, "last_report", None)
+            if last_rep:
+                get_stats_manager().record_print_batch(last_rep)
             if last_rep and last_rep.items:
                 dlg = ReportDialog(last_rep, current_theme_id=getattr(self, "current_theme", "dark_catppuccin"), parent=self)
                 dlg.repeat_requested.connect(self.on_repeat_failed_frames)

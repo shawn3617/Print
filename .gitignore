@@ -29,3 +29,5 @@ plot.log
 *.pdf
 !tests/samples/pdf/*.pdf
 spds_export_result.json
+stats.json
+*.corrupted
