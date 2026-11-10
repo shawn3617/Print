@@ -119,12 +119,20 @@ class ReorderableTableWidget(QTableWidget):
         super().keyPressEvent(event)
 
 class PrintProgressDialog(QDialog):
-    def __init__(self, total_steps: int, parent=None):
+    def __init__(
+        self,
+        total_steps: int,
+        parent=None,
+        title: str = "Пакетная печать PDF",
+        title_text: str = "Идет печать чертежей...",
+        cancel_status: str = "Отмена печати, завершение текущей операции..."
+    ):
         super().__init__(parent)
-        self.setWindowTitle("Пакетная печать PDF")
+        self.setWindowTitle(title)
         self.setModal(True)
         self.setFixedSize(500, 170)
         self.is_cancelled = False
+        self.cancel_status_msg = cancel_status
         
         # Убираем кнопку контекстной справки (?) в Windows
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
@@ -133,12 +141,12 @@ class PrintProgressDialog(QDialog):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(12)
         
-        self.lbl_title = QLabel("Идет печать чертежей...")
+        self.lbl_title = QLabel(title_text)
         self.lbl_title.setProperty("cssClass", "header_accent")
         self.lbl_title.setStyleSheet("font-size: 15px; font-weight: bold;")
         layout.addWidget(self.lbl_title)
         
-        self.lbl_status = QLabel("Подготовка к печати...")
+        self.lbl_status = QLabel("Подготовка к операции...")
         self.lbl_status.setStyleSheet("font-size: 13px;")
         self.lbl_status.setWordWrap(True)
         layout.addWidget(self.lbl_status)
@@ -180,7 +188,7 @@ class PrintProgressDialog(QDialog):
         
     def request_cancel(self):
         self.is_cancelled = True
-        self.lbl_status.setText("Отмена печати, завершение текущей операции...")
+        self.lbl_status.setText(self.cancel_status_msg)
         self.btn_cancel.setEnabled(False)
         QApplication.processEvents()
         
@@ -1300,9 +1308,13 @@ class PrintManagerUI(QMainWindow):
             return
 
         source_mode = self.combo_source.currentText()
-        progress_dlg = PrintProgressDialog(len(file_paths), parent=self)
-        progress_dlg.setWindowTitle("Пакетное сканирование DWG")
-        progress_dlg.lbl_title.setText("Поиск листов в чертежах...")
+        progress_dlg = PrintProgressDialog(
+            len(file_paths),
+            parent=self,
+            title="Пакетное сканирование DWG",
+            title_text="Поиск листов в чертежах...",
+            cancel_status="Отмена сканирования, завершение текущего файла..."
+        )
         progress_dlg.show()
         QApplication.processEvents()
 
@@ -1327,8 +1339,23 @@ class PrintManagerUI(QMainWindow):
             )
             progress_dlg.close()
 
+            scan_rep = getattr(self.scanner, "last_scan_report", None)
+            if scan_rep and scan_rep.cancelled and not new_frames:
+                if scan_rep.failed_files_count > 0:
+                    dlg = ReportDialog(scan_rep, current_theme_id=getattr(self, "current_theme", "dark_catppuccin"), parent=self)
+                    dlg.repeat_scan_requested.connect(self.process_batch_dwg_files)
+                    dlg.exec()
+                else:
+                    self.status_bar.showMessage("Сканирование чертежей отменено пользователем", 5000)
+                return
+
             if not new_frames:
-                QMessageBox.information(self, "Результат", "В указанных чертежах рамки/листы не найдены.")
+                if scan_rep and scan_rep.failed_files_count > 0:
+                    dlg = ReportDialog(scan_rep, current_theme_id=getattr(self, "current_theme", "dark_catppuccin"), parent=self)
+                    dlg.repeat_scan_requested.connect(self.process_batch_dwg_files)
+                    dlg.exec()
+                else:
+                    QMessageBox.information(self, "Результат", "В указанных чертежах рамки/листы не найдены.")
                 return
 
             self._is_updating_table = True
@@ -1356,9 +1383,9 @@ class PrintManagerUI(QMainWindow):
             self.update_format_filter_items()
             self.apply_filter()
 
-            scan_rep = getattr(self.scanner, "last_scan_report", None)
-            if scan_rep and (scan_rep.failed_files_count > 0 or scan_rep.empty_files_count > 0):
+            if scan_rep and (scan_rep.failed_files_count > 0 or scan_rep.empty_files_count > 0 or scan_rep.cancelled):
                 dlg = ReportDialog(scan_rep, current_theme_id=getattr(self, "current_theme", "dark_catppuccin"), parent=self)
+                dlg.repeat_scan_requested.connect(self.process_batch_dwg_files)
                 dlg.exec()
             else:
                 QMessageBox.information(

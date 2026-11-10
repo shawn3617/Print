@@ -4,6 +4,7 @@
 
 import sys
 import unittest
+from unittest.mock import patch
 from PySide6.QtWidgets import QApplication
 
 from core.logger import log_info, log_error, clear_log_buffer
@@ -35,11 +36,13 @@ class TestDiagnosticsDialog(unittest.TestCase):
         self.assertIn("Ошибка для окна", dlg.txt_logs.toPlainText())
 
         # Проверка копирования в буфер
-        dlg.on_copy_report_clicked()
-        cb = QApplication.clipboard()
-        self.assertIn("PrintPDF — Отчёт диагностики", cb.text())
-        self.assertIn("AutoCAD 2024", cb.text())
-        self.assertIn("Инфо для окна", cb.text())
+        with patch.object(QApplication.clipboard(), "setText") as mock_set:
+            dlg.on_copy_report_clicked()
+            mock_set.assert_called_once()
+            copied_text = mock_set.call_args[0][0]
+            self.assertIn("PrintPDF — Отчёт диагностики", copied_text)
+            self.assertIn("AutoCAD 2024", copied_text)
+            self.assertIn("Инфо для окна", copied_text)
 
         # Проверка очистки
         dlg.on_clear_clicked()

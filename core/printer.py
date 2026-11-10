@@ -18,6 +18,7 @@ from core.plotter_installer import install_bundled_plotters
 from core.logger import log_warn, log_error
 from core.report_models import PrintReport, PrintItemResult
 from core.filename_template import render_filename, resolve_duplicates, get_default_template
+from core.autocad_state import AutoCADStateGuard
 
 
 def _safe_file_part(text, max_len: int) -> str:
@@ -419,91 +420,82 @@ class BatchPrinter:
         opened_docs_to_close = {}
         initial_active_doc = self.doc if self._doc_alive(self.doc) else None
 
-        # Рамки из папки: их чертежи в AutoCAD могут быть закрыты, и активного документа нет.
-        # Тогда сразу открываем DWG первой рамки — дальше всё настраивается на нём.
-        if not self._doc_alive(self.doc):
-            first_path = next((f.dwg_path for f in frames if getattr(f, "dwg_path", "")), "")
-            if not (self.connector and first_path):
-                raise RuntimeError("Нет открытого чертежа в AutoCAD и не указан файл DWG для печати.")
-            target_path = os.path.abspath(first_path)
-            doc, was_opened = self.connector.open_document(target_path, read_only=True)
-            if not self._doc_alive(doc):
-                raise RuntimeError(f"Не удалось открыть чертеж: {target_path}")
-            self.connector.activate_document(doc)
-            self.doc = doc
-            if was_opened and target_path.lower() not in initially_open_files:
-                opened_docs_to_close[target_path.lower()] = doc
+        state_guard = AutoCADStateGuard(connector=self.connector, doc=self.doc, target_bg_plot=0)
+        state_guard.__enter__()
 
-        # Отключаем автооткрытие каждого листа в PDF-просмотрщике
         try:
-            if self._disable_pc3_view_file(printer_name):
-                self.doc.ModelSpace.Layout.RefreshPlotDeviceInfo()
-        except Exception as e:
-            print(f"Предупреждение: не удалось проверить PC3 настройки: {e}")
-        
-        self._ensure_plotters()
-        # Если есть рамки из Model Space, предварительно активируем ModelSpace
-        has_model_frames = any(
-            getattr(f, "layout_name", "Model").lower() == "model" and getattr(f, "source_type", "") != "Layout"
-            for f in frames
-        )
-        if has_model_frames:
+            # Рамки из папки: их чертежи в AutoCAD могут быть закрыты, и активного документа нет.
+            # Тогда сразу открываем DWG первой рамки — дальше всё настраивается на нём.
+            if not self._doc_alive(self.doc):
+                first_path = next((f.dwg_path for f in frames if getattr(f, "dwg_path", "")), "")
+                if not (self.connector and first_path):
+                    raise RuntimeError("Нет открытого чертежа в AutoCAD и не указан файл DWG для печати.")
+                target_path = os.path.abspath(first_path)
+                doc, was_opened = self.connector.open_document(target_path, read_only=True)
+                if not self._doc_alive(doc):
+                    raise RuntimeError(f"Не удалось открыть чертеж: {target_path}")
+                self.connector.activate_document(doc)
+                self.doc = doc
+                state_guard.register_doc(doc)
+                if was_opened and target_path.lower() not in initially_open_files:
+                    opened_docs_to_close[target_path.lower()] = doc
+
+            # Отключаем автооткрытие каждого листа в PDF-просмотрщике
             try:
-                def switch_init_model():
-                    model_layout = self.doc.ModelSpace.Layout
-                    if getattr(self.doc.ActiveLayout, "Name", "") != getattr(model_layout, "Name", "Model"):
-                        self.doc.ActiveLayout = model_layout
-                _retry_busy(switch_init_model)
+                if self._disable_pc3_view_file(printer_name):
+                    self.doc.ModelSpace.Layout.RefreshPlotDeviceInfo()
             except Exception as e:
-                _warn("не удалось переключиться на вкладку «Модель» (возможен пустой лист)", e)
-            self._setup_model_layout(printer_name, style_name)
-
-        # Строим словарь {формат -> canonical_name} из доступных форматов принтера
-        media_map = self._build_media_map(printer_name)
-        # Резервный формат мог прийти локальным именем (настройки из config.json без открытого
-        # чертежа) или пустым — приводим к системному имени этого плоттера
-        canonical_media_name = self._resolve_media_name(canonical_media_name, media_map)
-        
-        # Отключаем фоновую печать
-        try:
-            original_bg_plot = self.doc.GetVariable("BACKGROUNDPLOT")
-            self.doc.SetVariable("BACKGROUNDPLOT", 0)
-        except Exception as e:
-            _warn("не удалось отключить фоновую печать BACKGROUNDPLOT", e)
-            original_bg_plot = 0
-        
-        # Проверяем, содержат ли рамки несколько разных DWG
-        unique_dwgs = {os.path.abspath(f.dwg_path).lower() for f in frames if getattr(f, "dwg_path", "")}
-        has_multiple_dwgs = len(unique_dwgs) > 1
-
-        active_template = filename_template or get_default_template()
-        raw_filenames = []
-        for idx, frame in enumerate(frames):
-            fn = render_filename(active_template, frame, dwg_name=getattr(frame, "dwg_name", ""), index=idx + 1)
-            if has_multiple_dwgs and "{DWG}" not in active_template and getattr(frame, "dwg_name", ""):
-                raw_dwg_base = os.path.splitext(frame.dwg_name)[0]
-                clean_dwg_base = _safe_file_part(raw_dwg_base, 40)
-                if clean_dwg_base:
-                    fn = f"[{clean_dwg_base}] {fn}"
-            raw_filenames.append(fn)
-
-        batch_filenames = resolve_duplicates(raw_filenames)
-
-        # Создаем временную папку для temp-файлов (если режим merge)
-        temp_dir = None
-        if merge_pdf:
-            temp_dir = tempfile.mkdtemp(prefix="acad_print_")
+                print(f"Предупреждение: не удалось проверить PC3 настройки: {e}")
             
-        temp_files = []
-        temp_entries = []
-        total_steps = len(frames) + (1 if merge_pdf else 0)
-        original_active_layout_name = None
-        try:
-            original_active_layout_name = self.doc.ActiveLayout.Name
-        except Exception as e:
-            _warn("не удалось запомнить активную вкладку чертежа", e)
-        
-        try:
+            self._ensure_plotters()
+            # Если есть рамки из Model Space, предварительно активируем ModelSpace
+            has_model_frames = any(
+                getattr(f, "layout_name", "Model").lower() == "model" and getattr(f, "source_type", "") != "Layout"
+                for f in frames
+            )
+            if has_model_frames:
+                try:
+                    def switch_init_model():
+                        model_layout = self.doc.ModelSpace.Layout
+                        if getattr(self.doc.ActiveLayout, "Name", "") != getattr(model_layout, "Name", "Model"):
+                            self.doc.ActiveLayout = model_layout
+                    _retry_busy(switch_init_model)
+                except Exception as e:
+                    _warn("не удалось переключиться на вкладку «Модель» (возможен пустой лист)", e)
+                self._setup_model_layout(printer_name, style_name)
+
+            # Строим словарь {формат -> canonical_name} из доступных форматов принтера
+            media_map = self._build_media_map(printer_name)
+            # Резервный формат мог прийти локальным именем (настройки из config.json без открытого
+            # чертежа) или пустым — приводим к системному имени этого плоттера
+            canonical_media_name = self._resolve_media_name(canonical_media_name, media_map)
+            
+            # Проверяем, содержат ли рамки несколько разных DWG
+            unique_dwgs = {os.path.abspath(f.dwg_path).lower() for f in frames if getattr(f, "dwg_path", "")}
+            has_multiple_dwgs = len(unique_dwgs) > 1
+
+            active_template = filename_template or get_default_template()
+            raw_filenames = []
+            for idx, frame in enumerate(frames):
+                fn = render_filename(active_template, frame, dwg_name=getattr(frame, "dwg_name", ""), index=idx + 1)
+                if has_multiple_dwgs and "{DWG}" not in active_template and getattr(frame, "dwg_name", ""):
+                    raw_dwg_base = os.path.splitext(frame.dwg_name)[0]
+                    clean_dwg_base = _safe_file_part(raw_dwg_base, 40)
+                    if clean_dwg_base:
+                        fn = f"[{clean_dwg_base}] {fn}"
+                raw_filenames.append(fn)
+
+            batch_filenames = resolve_duplicates(raw_filenames)
+
+            # Создаем временную папку для temp-файлов (если режим merge)
+            temp_dir = None
+            if merge_pdf:
+                temp_dir = tempfile.mkdtemp(prefix="acad_print_")
+                
+            temp_files = []
+            temp_entries = []
+            total_steps = len(frames) + (1 if merge_pdf else 0)
+            
             for i, frame in enumerate(frames):
                 if is_cancelled and is_cancelled():
                     report.cancelled = True
@@ -548,12 +540,9 @@ class BatchPrinter:
                                 raise RuntimeError(f"Не удалось открыть чертеж: {target_path}")
                             self.connector.activate_document(doc)
                             self.doc = doc
+                            state_guard.register_doc(doc)
                             if was_opened and target_path.lower() not in initially_open_files:
                                 opened_docs_to_close[target_path.lower()] = doc
-                            try:
-                                _retry_busy(lambda: self.doc.SetVariable("BACKGROUNDPLOT", 0))
-                            except Exception as e:
-                                _warn(f"не удалось отключить BACKGROUNDPLOT в чертеже {target_path}", e)
                             if has_model_frames:
                                 self._setup_model_layout(printer_name, style_name)
 
@@ -899,12 +888,6 @@ class BatchPrinter:
             if report and report.duration_seconds == 0.0:
                 report.duration_seconds = time.perf_counter() - t_start
 
-            # BACKGROUNDPLOT хранится в реестре — возвращаем, пока открыт хоть один чертеж
-            try:
-                self.doc.SetVariable("BACKGROUNDPLOT", original_bg_plot)
-            except Exception as e:
-                _warn(f"не удалось вернуть BACKGROUNDPLOT={original_bg_plot}", e)
-
             # Закрываем чертежи, открытые для печати, — только если так попросили
             for d in (opened_docs_to_close.values() if close_opened_docs else []):
                 try:
@@ -913,8 +896,14 @@ class BatchPrinter:
                 except Exception as e:
                     _warn("не удалось закрыть чертеж, открытый для печати", e)
 
-            # Дальше работаем с исходным чертежом: self.doc мог указывать на уже закрытый.
-            # Исходного не было (печать из папки) — берём тот, что сейчас активен в AutoCAD (или None)
+            # Гарантированно восстанавливаем системные переменные, удаляем временные виды
+            # и возвращаем исходный чертеж и лист
+            try:
+                state_guard.restore()
+            except Exception as e:
+                _warn("ошибка при восстановлении состояния AutoCAD", e)
+
+            # Дальше восстанавливаем ссылку self.doc на исходный чертеж
             if initial_active_doc is not None:
                 self.doc = initial_active_doc
             else:
@@ -922,32 +911,6 @@ class BatchPrinter:
                     self.doc = self.connector.app.ActiveDocument if self.connector else None
                 except Exception:
                     self.doc = None
-
-            # Возвращаем исходный активный Layout, если он был изменен
-            if original_active_layout_name and initial_active_doc is not None:
-                try:
-                    self.doc.ActiveLayout = self.doc.Layouts.Item(original_active_layout_name)
-                except Exception as e:
-                    _warn(f"не удалось вернуть вкладку «{original_active_layout_name}»", e)
-
-            # Возвращаем исходный активный документ
-            if initial_active_doc and self.connector:
-                try:
-                    self.connector.activate_document(initial_active_doc)
-                except Exception as e:
-                    _warn("не удалось вернуть исходный активный чертеж", e)
-
-            # Очищаем временные View печати, если остались
-            try:
-                if self._doc_alive(self.doc):
-                    for v in list(self.doc.Views):
-                        if getattr(v, "Name", "").startswith("_SHT_PLOT_VIEW_"):
-                            try:
-                                v.Delete()
-                            except Exception as e:
-                                _warn(f"не удалось удалить временный вид {getattr(v, 'Name', '?')}", e)
-            except Exception as e:
-                _warn("не удалось очистить временные виды печати", e)
 
             # Удаляем всю временную папку целиком
             if temp_dir and os.path.exists(temp_dir):

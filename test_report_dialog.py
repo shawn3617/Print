@@ -77,7 +77,15 @@ class TestReportDialog(unittest.TestCase):
         dlg = ReportDialog(report=scan_rep, current_theme_id="dark_catppuccin")
         self.assertIn("Итоги сканирования чертежей", dlg.windowTitle())
         self.assertEqual(dlg.table.rowCount(), 2)
-        self.assertFalse(dlg.btn_repeat.isVisible())
+        # Кнопка повтора сбойных чертежей должна быть видна (не скрыта)
+        self.assertFalse(dlg.btn_repeat.isHidden())
+        self.assertIn("Повторить сбойные чертежи (1)", dlg.btn_repeat.text())
+
+        # Проверяем сигнал repeat_scan_requested
+        emitted_paths = []
+        dlg.repeat_scan_requested.connect(lambda paths: emitted_paths.extend(paths))
+        dlg.on_repeat_clicked()
+        self.assertEqual(emitted_paths, ["C:/Drawings/bad.dwg"])
         dlg.close()
 
     def test_main_window_repeat_failed_frames(self):

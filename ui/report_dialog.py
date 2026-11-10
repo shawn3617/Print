@@ -23,7 +23,8 @@ class ReportDialog(QDialog):
     """
     Диалоговое окно подробного отчёта о результатах печати или сканирования.
     """
-    repeat_requested = Signal(list)  # Передаёт список Frame для повторной печати
+    repeat_requested = Signal(list)       # Передаёт список Frame для повторной печати
+    repeat_scan_requested = Signal(list)  # Передаёт список путей DWG для повторного сканирования
 
     def __init__(self, report, current_theme_id: str = "dark_catppuccin", parent=None):
         super().__init__(parent)
@@ -383,7 +384,12 @@ class ReportDialog(QDialog):
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
 
-        self.btn_repeat.setVisible(False)
+        failed_files = [fr.file_path for fr in rep.file_results if not fr.success]
+        if failed_files:
+            self.btn_repeat.setText(f"🔄 Повторить сбойные чертежи ({len(failed_files)})")
+            self.btn_repeat.setVisible(True)
+        else:
+            self.btn_repeat.setVisible(False)
         self.btn_open.setVisible(False)
 
     def on_repeat_clicked(self):
@@ -391,6 +397,11 @@ class ReportDialog(QDialog):
             repeatable = self.report.repeatable_frames
             if repeatable:
                 self.repeat_requested.emit(repeatable)
+                self.accept()
+        elif isinstance(self.report, ScanReport):
+            failed_files = [fr.file_path for fr in self.report.file_results if not fr.success]
+            if failed_files:
+                self.repeat_scan_requested.emit(failed_files)
                 self.accept()
 
     def on_save_clicked(self):

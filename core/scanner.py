@@ -2,6 +2,7 @@ from typing import List
 from core.models import Frame, natural_sheet_sort_key, frame_natural_sort_key
 from core.logger import log_info, log_warn, log_error
 from core.report_models import ScanReport, ScanFileResult
+from core.autocad_state import AutoCADStateGuard
 from parsers.block_parser import BlockParser
 
 from parsers.spds_parser import SPDSParser
@@ -331,87 +332,90 @@ class DocumentScanner:
         total_files = len(file_paths)
         is_layouts = "layout" in source_mode.lower() or "лист" in source_mode.lower()
 
-        for idx, fpath in enumerate(file_paths):
-            if is_cancelled and is_cancelled():
-                scan_report.cancelled = True
-                break
-                
-            abs_path = os.path.abspath(fpath)
-            fname = os.path.basename(abs_path)
-            
-            if progress_callback:
-                progress_callback(idx, total_files, fname, f"Открытие чертежа {idx + 1} из {total_files}: {fname}...")
-                
-            doc = None
-            was_opened = False
-            file_success = False
-            file_error = ""
-            file_frames_count = 0
-            try:
-                doc, was_opened = connector.open_document(abs_path, read_only=True)
+        state_guard = AutoCADStateGuard(connector=connector, doc=initial_doc, target_bg_plot=None)
+        state_guard.__enter__()
+
+        try:
+            for idx, fpath in enumerate(file_paths):
+                if is_cancelled and is_cancelled():
+                    scan_report.cancelled = True
+                    break
+                    
+                abs_path = os.path.abspath(fpath)
+                fname = os.path.basename(abs_path)
                 
                 if progress_callback:
-                    status_act = "Поиск листов (Layouts)" if is_layouts else "Поиск рамок чертежа"
-                    progress_callback(idx, total_files, fname, f"{status_act} ({idx + 1}/{total_files}): {fname}...")
+                    progress_callback(idx, total_files, fname, f"Открытие чертежа {idx + 1} из {total_files}: {fname}...")
                     
-                if is_layouts:
-                    doc_frames = self.scan_layouts(doc, frame_type=frame_type, custom_block_name=custom_block_name)
-                else:
-                    doc_frames = self.scan_document(doc, frame_type=frame_type, custom_block_name=custom_block_name, space="model")
+                doc = None
+                was_opened = False
+                file_success = False
+                file_error = ""
+                file_frames_count = 0
+                try:
+                    doc, was_opened = connector.open_document(abs_path, read_only=True)
+                    state_guard.register_doc(doc)
                     
-                for fr in doc_frames:
-                    if not fr.dwg_path:
-                        fr.dwg_path = abs_path
-                    if not fr.dwg_name:
-                        fr.dwg_name = fname
+                    if progress_callback:
+                        status_act = "Поиск листов (Layouts)" if is_layouts else "Поиск рамок чертежа"
+                        progress_callback(idx, total_files, fname, f"{status_act} ({idx + 1}/{total_files}): {fname}...")
                         
-                all_frames.extend(doc_frames)
-                file_success = True
-                file_frames_count = len(doc_frames)
-                
-            except Exception as e:
-                file_error = str(e)
-                print(f"Ошибка при обработке файла '{abs_path}': {e}")
-                log_error(f"Ошибка при обработке файла '{abs_path}'", exc=e, module="Scanner")
-            finally:
-                if file_success:
-                    scan_report.file_results.append(ScanFileResult(
-                        file_path=abs_path,
-                        file_name=fname,
-                        success=True,
-                        frames_count=file_frames_count
-                    ))
-                    scan_report.success_files_count += 1
-                    if file_frames_count == 0:
-                        scan_report.empty_files_count += 1
-                else:
-                    scan_report.file_results.append(ScanFileResult(
-                        file_path=abs_path,
-                        file_name=fname,
-                        success=False,
-                        error=file_error,
-                        frames_count=0
-                    ))
-                    scan_report.failed_files_count += 1
+                    if is_layouts:
+                        doc_frames = self.scan_layouts(doc, frame_type=frame_type, custom_block_name=custom_block_name)
+                    else:
+                        doc_frames = self.scan_document(doc, frame_type=frame_type, custom_block_name=custom_block_name, space="model")
+                        
+                    for fr in doc_frames:
+                        if not fr.dwg_path:
+                            fr.dwg_path = abs_path
+                        if not fr.dwg_name:
+                            fr.dwg_name = fname
+                            
+                    all_frames.extend(doc_frames)
+                    file_success = True
+                    file_frames_count = len(doc_frames)
+                    
+                except Exception as e:
+                    file_error = str(e)
+                    print(f"Ошибка при обработке файла '{abs_path}': {e}")
+                    log_error(f"Ошибка при обработке файла '{abs_path}'", exc=e, module="Scanner")
+                finally:
+                    if file_success:
+                        scan_report.file_results.append(ScanFileResult(
+                            file_path=abs_path,
+                            file_name=fname,
+                            success=True,
+                            frames_count=file_frames_count
+                        ))
+                        scan_report.success_files_count += 1
+                        if file_frames_count == 0:
+                            scan_report.empty_files_count += 1
+                    else:
+                        scan_report.file_results.append(ScanFileResult(
+                            file_path=abs_path,
+                            file_name=fname,
+                            success=False,
+                            error=file_error,
+                            frames_count=0
+                        ))
+                        scan_report.failed_files_count += 1
 
-                # Закрываем чертеж только если мы его сами открыли и его изначально не было в AutoCAD
-                if doc and was_opened and abs_path.lower() not in initially_open_files:
-                    try:
-                        connector.close_document(doc, save_changes=False)
-                        import time
-                        time.sleep(0.3)
-                    except Exception:
-                        pass
-                        
-        if progress_callback:
-            progress_callback(total_files, total_files, "", "Сканирование завершено!")
-            
-        # По возможности возвращаем исходный активный документ
-        if initial_doc:
+                    # Закрываем чертеж только если мы его сами открыли и его изначально не было в AutoCAD
+                    if doc and was_opened and abs_path.lower() not in initially_open_files:
+                        try:
+                            connector.close_document(doc, save_changes=False)
+                            import time
+                            time.sleep(0.3)
+                        except Exception:
+                            pass
+                            
+            if progress_callback:
+                progress_callback(total_files, total_files, "", "Сканирование завершено!")
+        finally:
             try:
-                connector.activate_document(initial_doc)
-            except Exception:
-                pass
+                state_guard.restore()
+            except Exception as e:
+                log_warn("Ошибка при восстановлении состояния AutoCAD после сканирования", exc=e, module="Scanner")
                 
         # Сквозная сортировка всех рамок по номеру листа (для модели)
         if not is_layouts:
