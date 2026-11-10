@@ -76,7 +76,7 @@ def build_pdf_metadata(frames: list, doc_name: str = "") -> dict:
     try:
         from core.version import APP_VERSION
     except Exception:
-        APP_VERSION = "1.3.5"
+        APP_VERSION = "1.3.5.1"
 
     object_names = [f.object_name.strip() for f in frames if getattr(f, "object_name", None) and f.object_name.strip()]
     building_names = [f.building_name.strip() for f in frames if getattr(f, "building_name", None) and f.building_name.strip()]

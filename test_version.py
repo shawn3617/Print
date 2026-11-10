@@ -16,8 +16,8 @@ def _read(rel_path: str) -> str:
 
 class TestSingleVersionSource(unittest.TestCase):
     def test_version_format(self):
-        self.assertRegex(APP_VERSION, r"^\d+\.\d+\.\d+$")
-        self.assertEqual(len(parse_version(APP_VERSION)), 3)
+        self.assertRegex(APP_VERSION, r"^\d+\.\d+\.\d+(\.\d+)?$")
+        self.assertIn(len(parse_version(APP_VERSION)), (3, 4))
 
     def test_no_hardcoded_version_in_build_files(self):
         """В build.bat и setup.iss версия не прописана вручную — только из core/version.py."""
