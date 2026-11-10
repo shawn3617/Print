@@ -1,6 +1,7 @@
 from typing import List
 from core.models import Frame, natural_sheet_sort_key, frame_natural_sort_key
 from core.logger import log_info, log_warn, log_error
+from core.report_models import ScanReport, ScanFileResult
 from parsers.block_parser import BlockParser
 
 from parsers.spds_parser import SPDSParser
@@ -24,6 +25,7 @@ class DocumentScanner:
             BlockParser(),
             PolylineParser(target_layer="0000_Формат")
         ]
+        self.last_scan_report = None
 
     def get_parsers_for_mode(self, frame_type: str = "all", custom_block_name: str = "") -> list:
         """Возвращает список парсеров, соответствующих выбранному режиму поиска рамок."""
@@ -299,9 +301,15 @@ class DocumentScanner:
         is_cancelled: callable() -> bool
         """
         import os
+        import time
         
+        t_start = time.perf_counter()
+        scan_report = ScanReport(total_files=len(file_paths) if file_paths else 0)
+        self.last_scan_report = scan_report
+
         all_frames: List[Frame] = []
         if not file_paths:
+            scan_report.duration_seconds = time.perf_counter() - t_start
             return all_frames
             
         # Запоминаем исходно открытые чертежи, чтобы случайно не закрыть файлы пользователя
@@ -319,6 +327,7 @@ class DocumentScanner:
 
         for idx, fpath in enumerate(file_paths):
             if is_cancelled and is_cancelled():
+                scan_report.cancelled = True
                 break
                 
             abs_path = os.path.abspath(fpath)
@@ -329,6 +338,9 @@ class DocumentScanner:
                 
             doc = None
             was_opened = False
+            file_success = False
+            file_error = ""
+            file_frames_count = 0
             try:
                 doc, was_opened = connector.open_document(abs_path, read_only=True)
                 
@@ -348,11 +360,34 @@ class DocumentScanner:
                         fr.dwg_name = fname
                         
                 all_frames.extend(doc_frames)
+                file_success = True
+                file_frames_count = len(doc_frames)
                 
             except Exception as e:
+                file_error = str(e)
                 print(f"Ошибка при обработке файла '{abs_path}': {e}")
                 log_error(f"Ошибка при обработке файла '{abs_path}'", exc=e, module="Scanner")
             finally:
+                if file_success:
+                    scan_report.file_results.append(ScanFileResult(
+                        file_path=abs_path,
+                        file_name=fname,
+                        success=True,
+                        frames_count=file_frames_count
+                    ))
+                    scan_report.success_files_count += 1
+                    if file_frames_count == 0:
+                        scan_report.empty_files_count += 1
+                else:
+                    scan_report.file_results.append(ScanFileResult(
+                        file_path=abs_path,
+                        file_name=fname,
+                        success=False,
+                        error=file_error,
+                        frames_count=0
+                    ))
+                    scan_report.failed_files_count += 1
+
                 # Закрываем чертеж только если мы его сами открыли и его изначально не было в AutoCAD
                 if doc and was_opened and abs_path.lower() not in initially_open_files:
                     try:
@@ -375,6 +410,9 @@ class DocumentScanner:
         # Сквозная сортировка всех рамок по номеру листа (для модели)
         if not is_layouts:
             all_frames.sort(key=frame_natural_sort_key)
+
+        scan_report.total_frames_found = len(all_frames)
+        scan_report.duration_seconds = time.perf_counter() - t_start
         return all_frames
 
 

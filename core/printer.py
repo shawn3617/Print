@@ -15,6 +15,7 @@ class PrintCancelledError(Exception):
 from core.autocad_connector import _retry_busy
 from core.plotter_installer import install_bundled_plotters
 from core.logger import log_warn, log_error
+from core.report_models import PrintReport, PrintItemResult
 
 
 def _safe_file_part(text, max_len: int) -> str:
@@ -41,6 +42,7 @@ class BatchPrinter:
         self.doc = doc
         self.connector = connector
         self._plotters_checked = False
+        self.last_report = None
 
     def _ensure_plotters(self):
         """Один раз за запуск: свои плоттеры (папка plotters программы) -> в AutoCAD."""
@@ -285,7 +287,7 @@ class BatchPrinter:
             return False
 
     def print_frames(self, frames, printer_name: str, canonical_media_name: str, style_name: str, output_path: str, merge_pdf: bool = False, progress_callback=None, is_cancelled=None,
-                     close_opened_docs: bool = False):
+                     close_opened_docs: bool = False, continue_on_error: bool = True) -> PrintReport:
         """
         Отправляет выбранные рамки на печать в PDF.
         canonical_media_name используется как фолбэк, если не удалось подобрать формат.
@@ -294,13 +296,25 @@ class BatchPrinter:
         close_opened_docs: закрывать ли после печати чертежи, которые программа открыла сама.
             По умолчанию False — открытые чертежи остаются в AutoCAD (как в REVERS): повторная
             печать не открывает их заново, а вкладки — наглядно, что печаталось.
+        continue_on_error: продолжать ли печать следующих листов при сбое одного из них.
         """
         import time
         import tempfile
         import shutil
         
+        t_start = time.perf_counter()
+        report = PrintReport(
+            total_requested=len(frames) if frames else 0,
+            output_path=output_path,
+            is_merged=merge_pdf,
+            printer_name=printer_name,
+            style_name=style_name
+        )
+        self.last_report = report
+
         if not frames:
-            return
+            report.duration_seconds = time.perf_counter() - t_start
+            return report
 
         # Чертежи, уже открытые в AutoCAD до печати (их не закрываем)
         initially_open_files = set()
@@ -389,31 +403,19 @@ class BatchPrinter:
         try:
             for i, frame in enumerate(frames):
                 if is_cancelled and is_cancelled():
+                    report.cancelled = True
+                    for rem_frame in frames[i:]:
+                        report.items.append(PrintItemResult(
+                            frame=rem_frame,
+                            success=False,
+                            skipped=True,
+                            dwg_name=getattr(rem_frame, "dwg_name", ""),
+                            sheet_number=str(getattr(rem_frame, "sheet_number", "")),
+                            sheet_name=str(getattr(rem_frame, "sheet_name", ""))
+                        ))
+                    report.skipped_count = len(report.skipped_frames)
+                    report.duration_seconds = time.perf_counter() - t_start
                     raise PrintCancelledError("Печать отменена пользователем.")
-                    
-                # Если рамка из другого DWG-файла, открываем/переключаем документ
-                if self.connector and getattr(frame, "dwg_path", ""):
-                    cur_doc_path = ""
-                    try:
-                        cur_doc_path = getattr(self.doc, "FullName", "") or ""
-                    except Exception:
-                        pass  # путь неизвестен — ниже просто откроем/найдём нужный чертеж заново
-                    target_path = os.path.abspath(frame.dwg_path)
-                    if not cur_doc_path or os.path.abspath(cur_doc_path).lower() != target_path.lower():
-                        doc, was_opened = self.connector.open_document(target_path, read_only=True)
-                        if not self._doc_alive(doc):
-                            raise RuntimeError(f"Не удалось открыть чертеж: {target_path}")
-                        self.connector.activate_document(doc)
-                        self.doc = doc
-                        if was_opened and target_path.lower() not in initially_open_files:
-                            opened_docs_to_close[target_path.lower()] = doc
-                        try:
-                            _retry_busy(lambda: self.doc.SetVariable("BACKGROUNDPLOT", 0))
-                        except Exception as e:
-                            _warn(f"не удалось отключить BACKGROUNDPLOT в чертеже {target_path}", e)
-                        if has_model_frames:
-                            self._setup_model_layout(printer_name, style_name)
-
                     
                 safe_name = _safe_file_part(frame.sheet_name, 80) or "Без_Имени"
                 safe_num = _safe_file_part(frame.sheet_number, 20) or "б-н"
@@ -422,59 +424,171 @@ class BatchPrinter:
                     status = f"Печать листа {i + 1} из {len(frames)}: Лист {frame.sheet_number} ({safe_name})..."
                     progress_callback(i, total_steps, status)
                 
-                is_paper_space = (getattr(frame, "layout_name", "Model").lower() != "model") or (getattr(frame, "source_type", "") == "Layout")
-                
-                if is_paper_space:
-                    if getattr(frame, "source_type", "") == "Layout":
-                        target_layout_name = frame.sheet_name
-                    else:
-                        target_layout_name = getattr(frame, "layout_name", "") or frame.sheet_name
-                    try:
-                        cur_layout = self.doc.Layouts.Item(target_layout_name)
-                    except Exception:
-                        try:
-                            cur_layout = self.doc.Layouts.Item(frame.sheet_name)
-                        except Exception:
-                            cur_layout = self.doc.ActiveLayout
-                    
-                    # 1. Активируем вкладку Layout с повторными попытками при занятости AutoCAD
-                    def switch_layout_tab():
-                        if getattr(self.doc.ActiveLayout, "Name", "") != cur_layout.Name:
-                            self.doc.ActiveLayout = cur_layout
-                    _retry_busy(switch_layout_tab)
-                    
-                    # Даем AutoCAD время на регенерацию Paper Space
-                    time.sleep(0.4)
-                    
-                    # 2. Настраиваем параметры листа Layout
-                    def setup_layout_params():
-                        cur_layout.ConfigName = printer_name
-                        cur_layout.StyleSheet = style_name
-                        cur_layout.PlotWithPlotStyles = True
-                        cur_layout.PlotWithLineweights = True
-                        
-                        media_name = media_map.get(frame.paper_format)
-                        if not media_name:
-                            media_name = canonical_media_name
-                            warn_msg = (f"У плоттера «{printer_name}» нет бумаги для формата {frame.paper_format} "
-                                        f"(лист {frame.sheet_number}) — применен резервный формат «{canonical_media_name}»")
-                            frame.fallback_warning = warn_msg
-                            _warn(warn_msg)
-                        if media_name:
-                            try:
-                                cur_layout.CanonicalMediaName = media_name
-                            except Exception as e:
-                                _warn(f"плоттер не принял формат бумаги «{media_name}» (лист {frame.sheet_number}) "
-                                      f"— печать на текущем формате листа", e)
+                fallback_info = {"used": False, "format": ""}
+                frame_success = False
+                frame_error = ""
+                cur_layout = None
+                filepath = ""
 
-                        has_window = (
-                            getattr(frame, "source_type", "") != "Layout"
-                            and frame.min_point
-                            and frame.max_point
-                            and (abs(frame.max_point[0] - frame.min_point[0]) > 1.0 or abs(frame.max_point[1] - frame.min_point[1]) > 1.0)
-                        )
-                        if has_window:
-                            # Определение ориентации
+                try:
+                    # Если рамка из другого DWG-файла, открываем/переключаем документ
+                    if self.connector and getattr(frame, "dwg_path", ""):
+                        cur_doc_path = ""
+                        try:
+                            cur_doc_path = getattr(self.doc, "FullName", "") or ""
+                        except Exception:
+                            pass
+                        target_path = os.path.abspath(frame.dwg_path)
+                        if not cur_doc_path or os.path.abspath(cur_doc_path).lower() != target_path.lower():
+                            doc, was_opened = self.connector.open_document(target_path, read_only=True)
+                            if not self._doc_alive(doc):
+                                raise RuntimeError(f"Не удалось открыть чертеж: {target_path}")
+                            self.connector.activate_document(doc)
+                            self.doc = doc
+                            if was_opened and target_path.lower() not in initially_open_files:
+                                opened_docs_to_close[target_path.lower()] = doc
+                            try:
+                                _retry_busy(lambda: self.doc.SetVariable("BACKGROUNDPLOT", 0))
+                            except Exception as e:
+                                _warn(f"не удалось отключить BACKGROUNDPLOT в чертеже {target_path}", e)
+                            if has_model_frames:
+                                self._setup_model_layout(printer_name, style_name)
+
+                    is_paper_space = (getattr(frame, "layout_name", "Model").lower() != "model") or (getattr(frame, "source_type", "") == "Layout")
+                    
+                    if is_paper_space:
+                        if getattr(frame, "source_type", "") == "Layout":
+                            target_layout_name = frame.sheet_name
+                        else:
+                            target_layout_name = getattr(frame, "layout_name", "") or frame.sheet_name
+                        try:
+                            cur_layout = self.doc.Layouts.Item(target_layout_name)
+                        except Exception:
+                            try:
+                                cur_layout = self.doc.Layouts.Item(frame.sheet_name)
+                            except Exception:
+                                cur_layout = self.doc.ActiveLayout
+                        
+                        # 1. Активируем вкладку Layout с повторными попытками при занятости AutoCAD
+                        def switch_layout_tab():
+                            if getattr(self.doc.ActiveLayout, "Name", "") != cur_layout.Name:
+                                self.doc.ActiveLayout = cur_layout
+                        _retry_busy(switch_layout_tab)
+                        
+                        # Даем AutoCAD время на регенерацию Paper Space
+                        time.sleep(0.4)
+                        
+                        # 2. Настраиваем параметры листа Layout
+                        def setup_layout_params():
+                            cur_layout.ConfigName = printer_name
+                            cur_layout.StyleSheet = style_name
+                            cur_layout.PlotWithPlotStyles = True
+                            cur_layout.PlotWithLineweights = True
+                            
+                            media_name = media_map.get(frame.paper_format)
+                            if not media_name:
+                                media_name = canonical_media_name
+                                fallback_info["used"] = True
+                                fallback_info["format"] = canonical_media_name
+                                warn_msg = (f"У плоттера «{printer_name}» нет бумаги для формата {frame.paper_format} "
+                                            f"(лист {frame.sheet_number}) — применен резервный формат «{canonical_media_name}»")
+                                frame.fallback_warning = warn_msg
+                                _warn(warn_msg)
+                            if media_name:
+                                try:
+                                    cur_layout.CanonicalMediaName = media_name
+                                except Exception as e:
+                                    _warn(f"плоттер не принял формат бумаги «{media_name}» (лист {frame.sheet_number}) "
+                                          f"— печать на текущем формате листа", e)
+
+                            has_window = (
+                                getattr(frame, "source_type", "") != "Layout"
+                                and frame.min_point
+                                and frame.max_point
+                                and (abs(frame.max_point[0] - frame.min_point[0]) > 1.0 or abs(frame.max_point[1] - frame.min_point[1]) > 1.0)
+                            )
+                            if has_window:
+                                # Определение ориентации
+                                is_paper_landscape = False
+                                try:
+                                    local_name = cur_layout.GetLocaleMediaName(media_name)
+                                    import re
+                                    nums = [float(x) for x in re.findall(r'\d+(?:\.\d+)?', local_name)]
+                                    dims = [n for n in nums if n >= 100]
+                                    if len(dims) >= 2:
+                                        paper_w, paper_h = dims[-2], dims[-1]
+                                        is_paper_landscape = paper_w > paper_h
+                                except Exception as e:
+                                    _warn(f"не удалось определить ориентацию бумаги (лист {frame.sheet_number})", e)
+                                frame_w = abs(frame.max_point[0] - frame.min_point[0])
+                                frame_h = abs(frame.max_point[1] - frame.min_point[1])
+                                is_frame_landscape = frame_w > frame_h
+
+                                target_rot = 1 if is_frame_landscape != is_paper_landscape else 0
+                                if getattr(cur_layout, "PlotRotation", -1) != target_rot:
+                                    cur_layout.PlotRotation = target_rot
+
+                                p1 = win32com.client.VARIANT(
+                                    win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
+                                    (frame.min_point[0], frame.min_point[1])
+                                )
+                                p2 = win32com.client.VARIANT(
+                                    win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
+                                    (frame.max_point[0], frame.max_point[1])
+                                )
+                                cur_layout.SetWindowToPlot(p1, p2)
+                                if getattr(cur_layout, "PlotType", -1) != 4:
+                                    cur_layout.PlotType = 4  # acWindow
+                                if getattr(cur_layout, "StandardScale", -1) != 0:
+                                    cur_layout.StandardScale = 0
+                                if not getattr(cur_layout, "CenterPlot", False):
+                                    cur_layout.CenterPlot = True
+                            else:
+                                cur_layout.PlotType = 5  # acLayout
+                        _retry_busy(setup_layout_params)
+                    else:
+                        # 1. Активируем вкладку Модель, только если в AutoCAD был активен лист Layout
+                        model_layout = self.doc.ModelSpace.Layout
+                        if getattr(self.doc.ActiveLayout, "Name", "") != getattr(model_layout, "Name", "Model"):
+                            def switch_model_tab():
+                                self.doc.ActiveLayout = model_layout
+                            _retry_busy(switch_model_tab)
+                            time.sleep(0.3)
+
+                        # 2. Настраиваем параметры печати рамки в пространстве модели
+                        def setup_model_params():
+                            cur_layout = self.doc.ModelSpace.Layout
+                            if getattr(cur_layout, "ConfigName", "").lower() != printer_name.lower():
+                                cur_layout.ConfigName = printer_name
+                            if getattr(cur_layout, "StyleSheet", "").lower() != style_name.lower():
+                                cur_layout.StyleSheet = style_name
+                            if not getattr(cur_layout, "PlotWithPlotStyles", False):
+                                cur_layout.PlotWithPlotStyles = True
+                            if not getattr(cur_layout, "PlotWithLineweights", False):
+                                cur_layout.PlotWithLineweights = True
+
+                            # Автоподбор формата бумаги по формату рамки
+                            media_name = media_map.get(frame.paper_format)
+                            if not media_name:
+                                fallback_info["used"] = True
+                                fallback_info["format"] = canonical_media_name
+                                warn_msg = (f"У плоттера «{printer_name}» нет бумаги для формата "
+                                            f"{frame.paper_format} (лист {frame.sheet_number}) — печать на резервном "
+                                            f"формате «{canonical_media_name}»")
+                                frame.fallback_warning = warn_msg
+                                print(f"Предупреждение: {warn_msg}")
+                                _warn(warn_msg)
+                                media_name = canonical_media_name
+                            if getattr(cur_layout, "CanonicalMediaName", "") != media_name:
+                                try:
+                                    cur_layout.CanonicalMediaName = media_name
+                                except pythoncom.com_error:
+                                    raise RuntimeError(
+                                        f"Плоттер «{printer_name}» не поддерживает формат бумаги «{media_name}» "
+                                        f"(лист {frame.sheet_number}, формат {frame.paper_format}). "
+                                        f"Проверьте выбранный формат бумаги или настройки плоттера.")
+                        
+                            # Подбор ориентации листа
                             is_paper_landscape = False
                             try:
                                 local_name = cur_layout.GetLocaleMediaName(media_name)
@@ -489,160 +603,78 @@ class BatchPrinter:
                             frame_w = abs(frame.max_point[0] - frame.min_point[0])
                             frame_h = abs(frame.max_point[1] - frame.min_point[1])
                             is_frame_landscape = frame_w > frame_h
-
+                        
                             target_rot = 1 if is_frame_landscape != is_paper_landscape else 0
                             if getattr(cur_layout, "PlotRotation", -1) != target_rot:
                                 cur_layout.PlotRotation = target_rot
+                        
+                            view_name = "_SHT_PLOT_VIEW"
+                            view = None
+                            try:
+                                view = self.doc.Views.Item(view_name)
+                            except Exception:
+                                try:
+                                    view = self.doc.Views.Add(view_name)
+                                except Exception as e:
+                                    _warn("не удалось создать вид печати, печать по окну (acWindow)", e)
 
-                            p1 = win32com.client.VARIANT(
-                                win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
-                                (frame.min_point[0], frame.min_point[1])
-                            )
-                            p2 = win32com.client.VARIANT(
-                                win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
-                                (frame.max_point[0], frame.max_point[1])
-                            )
-                            cur_layout.SetWindowToPlot(p1, p2)
-                            if getattr(cur_layout, "PlotType", -1) != 4:
-                                cur_layout.PlotType = 4  # acWindow
+                            if view:
+                                cx = (frame.min_point[0] + frame.max_point[0]) / 2.0
+                                cy = (frame.min_point[1] + frame.max_point[1]) / 2.0
+                                center_pt = win32com.client.VARIANT(
+                                    win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8,
+                                    (cx, cy)
+                                )
+                                view.Center = center_pt
+                                view.Width = frame_w
+                                view.Height = frame_h
+                                if getattr(cur_layout, "ViewToPlot", "") != view_name:
+                                    cur_layout.ViewToPlot = view_name
+                                if getattr(cur_layout, "PlotType", -1) != 3:
+                                    cur_layout.PlotType = 3  # acView
+                            else:
+                                p1 = win32com.client.VARIANT(
+                                    win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
+                                    (frame.min_point[0], frame.min_point[1])
+                                )
+                                p2 = win32com.client.VARIANT(
+                                    win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
+                                    (frame.max_point[0], frame.max_point[1])
+                                )
+                                cur_layout.SetWindowToPlot(p1, p2)
+                                if getattr(cur_layout, "PlotType", -1) != 4:
+                                    cur_layout.PlotType = 4  # acWindow
+
                             if getattr(cur_layout, "StandardScale", -1) != 0:
                                 cur_layout.StandardScale = 0
                             if not getattr(cur_layout, "CenterPlot", False):
                                 cur_layout.CenterPlot = True
-                        else:
-                            cur_layout.PlotType = 5  # acLayout
-                    _retry_busy(setup_layout_params)
-                else:
-                    # 1. Активируем вкладку Модель, только если в AutoCAD был активен лист Layout
-                    model_layout = self.doc.ModelSpace.Layout
-                    if getattr(self.doc.ActiveLayout, "Name", "") != getattr(model_layout, "Name", "Model"):
-                        def switch_model_tab():
-                            self.doc.ActiveLayout = model_layout
-                        _retry_busy(switch_model_tab)
-                        time.sleep(0.3)
-
-                    # 2. Настраиваем параметры печати рамки в пространстве модели
-                    def setup_model_params():
-                        cur_layout = self.doc.ModelSpace.Layout
-                        if getattr(cur_layout, "ConfigName", "").lower() != printer_name.lower():
-                            cur_layout.ConfigName = printer_name
-                        if getattr(cur_layout, "StyleSheet", "").lower() != style_name.lower():
-                            cur_layout.StyleSheet = style_name
-                        if not getattr(cur_layout, "PlotWithPlotStyles", False):
-                            cur_layout.PlotWithPlotStyles = True
-                        if not getattr(cur_layout, "PlotWithLineweights", False):
-                            cur_layout.PlotWithLineweights = True
-
-                        # Автоподбор формата бумаги по формату рамки
-                        media_name = media_map.get(frame.paper_format)
-                        if not media_name:
-                            # Резервный формат: у плоттера нет бумаги под формат этой рамки
-                            warn_msg = (f"У плоттера «{printer_name}» нет бумаги для формата "
-                                        f"{frame.paper_format} (лист {frame.sheet_number}) — печать на резервном "
-                                        f"формате «{canonical_media_name}»")
-                            frame.fallback_warning = warn_msg
-                            print(f"Предупреждение: {warn_msg}")
-                            _warn(warn_msg)
-                            media_name = canonical_media_name
-                        if getattr(cur_layout, "CanonicalMediaName", "") != media_name:
-                            try:
-                                cur_layout.CanonicalMediaName = media_name
-                            except pythoncom.com_error:
-                                raise RuntimeError(
-                                    f"Плоттер «{printer_name}» не поддерживает формат бумаги «{media_name}» "
-                                    f"(лист {frame.sheet_number}, формат {frame.paper_format}). "
-                                    f"Проверьте выбранный формат бумаги или настройки плоттера.")
                     
-                        # Подбор ориентации листа
-                        is_paper_landscape = False
-                        try:
-                            local_name = cur_layout.GetLocaleMediaName(media_name)
-                            import re
-                            nums = [float(x) for x in re.findall(r'\d+(?:\.\d+)?', local_name)]
-                            dims = [n for n in nums if n >= 100]
-                            if len(dims) >= 2:
-                                paper_w, paper_h = dims[-2], dims[-1]
-                                is_paper_landscape = paper_w > paper_h
-                        except Exception as e:
-                            _warn(f"не удалось определить ориентацию бумаги (лист {frame.sheet_number})", e)
-                        frame_w = abs(frame.max_point[0] - frame.min_point[0])
-                        frame_h = abs(frame.max_point[1] - frame.min_point[1])
-                        is_frame_landscape = frame_w > frame_h
+                        _retry_busy(setup_model_params)
+
+                    dwg_prefix = ""
+                    if has_multiple_dwgs and getattr(frame, "dwg_name", ""):
+                        raw_dwg_base = os.path.splitext(frame.dwg_name)[0]
+                        clean_dwg_base = _safe_file_part(raw_dwg_base, 40)
+                        if clean_dwg_base:
+                            dwg_prefix = f"[{clean_dwg_base}] "
+
+                    if merge_pdf:
+                        filename = f"{i:04d}_{dwg_prefix}Лист {safe_num} - {safe_name}.pdf"
+                        filepath = os.path.join(temp_dir, filename)
+                    else:
+                        filename = f"{dwg_prefix}Лист {safe_num} - {safe_name}.pdf"
+                        filepath = os.path.abspath(os.path.join(output_path, filename))
                     
-                        target_rot = 1 if is_frame_landscape != is_paper_landscape else 0
-                        if getattr(cur_layout, "PlotRotation", -1) != target_rot:
-                            cur_layout.PlotRotation = target_rot
-                    
-                        # Печать через единый постоянный именованный View (acView = 3)
-                        # Полностью решает проблему со сдвигом окна в чертежах с отличным от нуля TARGET/DCS
-                        # (геоподоснова, мосты, МСК-координаты), и работает мгновенно без пересоздания объекта View.
-                        view_name = "_SHT_PLOT_VIEW"
-                        view = None
-                        try:
-                            view = self.doc.Views.Item(view_name)
-                        except Exception:
-                            try:
-                                view = self.doc.Views.Add(view_name)
-                            except Exception as e:
-                                _warn("не удалось создать вид печати, печать по окну (acWindow)", e)
-
-                        if view:
-                            cx = (frame.min_point[0] + frame.max_point[0]) / 2.0
-                            cy = (frame.min_point[1] + frame.max_point[1]) / 2.0
-                            center_pt = win32com.client.VARIANT(
-                                win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8,
-                                (cx, cy)
-                            )
-                            view.Center = center_pt
-                            view.Width = frame_w
-                            view.Height = frame_h
-                            if getattr(cur_layout, "ViewToPlot", "") != view_name:
-                                cur_layout.ViewToPlot = view_name
-                            if getattr(cur_layout, "PlotType", -1) != 3:
-                                cur_layout.PlotType = 3  # acView
-                        else:
-                            # Резервный вариант acWindow при отсутствии поддержки Views
-                            p1 = win32com.client.VARIANT(
-                                win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
-                                (frame.min_point[0], frame.min_point[1])
-                            )
-                            p2 = win32com.client.VARIANT(
-                                win32com.client.pythoncom.VT_ARRAY | win32com.client.pythoncom.VT_R8, 
-                                (frame.max_point[0], frame.max_point[1])
-                            )
-                            cur_layout.SetWindowToPlot(p1, p2)
-                            if getattr(cur_layout, "PlotType", -1) != 4:
-                                cur_layout.PlotType = 4  # acWindow
-
-                        if getattr(cur_layout, "StandardScale", -1) != 0:
-                            cur_layout.StandardScale = 0
-                        if not getattr(cur_layout, "CenterPlot", False):
-                            cur_layout.CenterPlot = True
-                
-                    _retry_busy(setup_model_params)
-
-                dwg_prefix = ""
-                if has_multiple_dwgs and getattr(frame, "dwg_name", ""):
-                    raw_dwg_base = os.path.splitext(frame.dwg_name)[0]
-                    clean_dwg_base = _safe_file_part(raw_dwg_base, 40)
-                    if clean_dwg_base:
-                        dwg_prefix = f"[{clean_dwg_base}] "
-
-                if merge_pdf:
-                    filename = f"{i:04d}_{dwg_prefix}Лист {safe_num} - {safe_name}.pdf"
-                    filepath = os.path.join(temp_dir, filename)
-                    temp_files.append(filepath)
-                else:
-                    filename = f"{dwg_prefix}Лист {safe_num} - {safe_name}.pdf"
-                    filepath = os.path.abspath(os.path.join(output_path, filename))
-                
-                # Печать листа через PlotToFile с обработкой занятости AutoCAD (RPC_E_CALL_REJECTED)
-                def do_plot():
-                    self.doc.Plot.PlotToFile(filepath, printer_name)
-                try:
+                    # Печать листа через PlotToFile с обработкой занятости AutoCAD (RPC_E_CALL_REJECTED)
+                    def do_plot():
+                        self.doc.Plot.PlotToFile(filepath, printer_name)
                     _retry_busy(do_plot)
+                    frame_success = True
+
+                except PrintCancelledError:
+                    raise
                 except pythoncom.com_error as e:
-                    # Подробности — чтобы по одному сообщению было видно, какой лист и с какими параметрами
                     def _get(obj, attr):
                         try:
                             return getattr(obj, attr)
@@ -656,13 +688,63 @@ class BatchPrinter:
                     details = (
                         f"лист {frame.sheet_number} «{frame.sheet_name}», формат рамки {frame.paper_format}, "
                         f"чертеж {getattr(frame, 'dwg_name', '') or _get(self.doc, 'Name')}, "
-                        f"вкладка {_get(cur_layout, 'Name')}, бумага «{_get(cur_layout, 'CanonicalMediaName')}», "
-                        f"PlotType={_get(cur_layout, 'PlotType')}, размер рамки {frame_size}, "
-                        f"файл ({len(filepath)} симв.): {filepath}"
+                        f"вкладка {_get(cur_layout, 'Name') if cur_layout else '?'}, бумага «{_get(cur_layout, 'CanonicalMediaName') if cur_layout else '?'}"
                     )
-                    raise RuntimeError(f"AutoCAD отказался печатать: {details}\nОшибка AutoCAD: {e}") from e
+                    err_msg = f"AutoCAD отказался печатать ({details}): {e}"
+                    frame_error = err_msg
+                    log_error(err_msg, exc=e, module="Печать")
+                    if not continue_on_error:
+                        raise RuntimeError(err_msg) from e
+                except Exception as e:
+                    err_msg = f"Ошибка печати листа {frame.sheet_number} ({frame.sheet_name}): {e}"
+                    frame_error = err_msg
+                    log_error(err_msg, exc=e, module="Печать")
+                    if not continue_on_error:
+                        raise
+
+                if frame_success:
+                    if merge_pdf and filepath:
+                        temp_files.append(filepath)
+                    report.items.append(PrintItemResult(
+                        frame=frame,
+                        success=True,
+                        output_file=filepath,
+                        fallback_used=fallback_info["used"],
+                        fallback_format=fallback_info["format"],
+                        dwg_name=getattr(frame, "dwg_name", ""),
+                        sheet_number=str(getattr(frame, "sheet_number", "")),
+                        sheet_name=str(getattr(frame, "sheet_name", ""))
+                    ))
+                    report.success_count += 1
+                    if fallback_info["used"]:
+                        report.fallback_count += 1
+                else:
+                    report.items.append(PrintItemResult(
+                        frame=frame,
+                        success=False,
+                        error=frame_error,
+                        output_file="",
+                        fallback_used=fallback_info["used"],
+                        fallback_format=fallback_info["format"],
+                        dwg_name=getattr(frame, "dwg_name", ""),
+                        sheet_number=str(getattr(frame, "sheet_number", "")),
+                        sheet_name=str(getattr(frame, "sheet_name", ""))
+                    ))
+                    report.failed_count += 1
                 
                 if is_cancelled and is_cancelled():
+                    report.cancelled = True
+                    for rem_frame in frames[i + 1:]:
+                        report.items.append(PrintItemResult(
+                            frame=rem_frame,
+                            success=False,
+                            skipped=True,
+                            dwg_name=getattr(rem_frame, "dwg_name", ""),
+                            sheet_number=str(getattr(rem_frame, "sheet_number", "")),
+                            sheet_name=str(getattr(rem_frame, "sheet_name", ""))
+                        ))
+                    report.skipped_count = len(report.skipped_frames)
+                    report.duration_seconds = time.perf_counter() - t_start
                     raise PrintCancelledError("Печать отменена пользователем.")
                 
             # Объединяем файлы, если нужно
@@ -707,8 +789,14 @@ class BatchPrinter:
                     
             if progress_callback:
                 progress_callback(total_steps, total_steps, "Готово!")
+
+            report.duration_seconds = time.perf_counter() - t_start
+            return report
                 
         finally:
+            if report and report.duration_seconds == 0.0:
+                report.duration_seconds = time.perf_counter() - t_start
+
             # BACKGROUNDPLOT хранится в реестре — возвращаем, пока открыт хоть один чертеж
             try:
                 self.doc.SetVariable("BACKGROUNDPLOT", original_bg_plot)

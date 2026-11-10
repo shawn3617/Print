@@ -28,6 +28,7 @@ from ui.themes import THEMES, build_theme_qss, get_theme_status_colors, apply_ti
 from ui.help_dialog import HelpDialog
 from ui.about_dialog import AboutDialog, APP_VERSION
 from ui.diagnostics_dialog import DiagnosticsDialog
+from ui.report_dialog import ReportDialog
 
 
 class ReorderableTableWidget(QTableWidget):
@@ -986,11 +987,16 @@ class PrintManagerUI(QMainWindow):
             self.update_format_filter_items()
             self.apply_filter()
 
-            QMessageBox.information(
-                self,
-                "Сканирование завершено",
-                f"Обработано файлов: {len(file_paths)}\nДобавлено листов: {len(new_frames)} (всего в очереди: {len(self.frames)})"
-            )
+            scan_rep = getattr(self.scanner, "last_scan_report", None)
+            if scan_rep and (scan_rep.failed_files_count > 0 or scan_rep.empty_files_count > 0):
+                dlg = ReportDialog(scan_rep, current_theme_id=getattr(self, "current_theme", "dark_catppuccin"), parent=self)
+                dlg.exec()
+            else:
+                QMessageBox.information(
+                    self,
+                    "Сканирование завершено",
+                    f"Обработано файлов: {len(file_paths)}\nДобавлено листов: {len(new_frames)} (всего в очереди: {len(self.frames)})"
+                )
 
 
         except Exception as e:
@@ -2061,7 +2067,7 @@ class PrintManagerUI(QMainWindow):
             return progress_dlg.is_cancelled
             
         try:
-            self.printer.print_frames(
+            report = self.printer.print_frames(
                 frames=selected_frames,
                 printer_name=printer_name,
                 canonical_media_name=sys_paper_name,
@@ -2074,29 +2080,35 @@ class PrintManagerUI(QMainWindow):
             
             progress_dlg.close()
             
+            # Обновляем отображение таблицы (например, отметки резервного формата)
+            if report and report.fallback_count > 0:
+                self._refresh_table_formats()
+
             # Открываем готовый объединенный PDF или папку с файлами
-            if self.chk_open_after.isChecked():
+            if self.chk_open_after.isChecked() and report and report.success_count > 0:
                 try:
                     os.startfile(output_path)
                 except Exception as e:
                     log_warn(f"Не удалось открыть файл '{output_path}'", exc=e, module="Printing")
 
-            fallback_sheets = [f for f in selected_frames if getattr(f, "fallback_warning", "")]
-            if fallback_sheets:
-                self._refresh_table_formats()
-                msg = (
-                    f"Успешно напечатано {len(selected_frames)} листов в:\n{output_path}\n\n"
-                    f"⚠️ Обратите внимание: для {len(fallback_sheets)} листов применён резервный формат!\n"
-                    f"Строки в таблице отмечены значком ⚠️.\n"
-                    f"Подробный журнал доступен по клавише F2 («Диагностика»)."
-                )
-                QMessageBox.warning(self, "Печать завершена с предупреждениями", msg)
+            # Открываем подробный итоговый отчёт
+            if report:
+                dlg = ReportDialog(report, current_theme_id=getattr(self, "current_theme", "dark_catppuccin"), parent=self)
+                dlg.repeat_requested.connect(self.on_repeat_failed_frames)
+                dlg.exec()
             else:
                 QMessageBox.information(self, "Успех", f"Успешно напечатано {len(selected_frames)} листов в:\n{output_path}")
+
         except PrintCancelledError:
             progress_dlg.close()
             log_info("Пакетная печать отменена пользователем", module="Printing")
-            QMessageBox.information(self, "Печать отменена", "Пакетная печать была отменена пользователем.")
+            last_rep = getattr(self.printer, "last_report", None)
+            if last_rep and last_rep.items:
+                dlg = ReportDialog(last_rep, current_theme_id=getattr(self, "current_theme", "dark_catppuccin"), parent=self)
+                dlg.repeat_requested.connect(self.on_repeat_failed_frames)
+                dlg.exec()
+            else:
+                QMessageBox.information(self, "Печать отменена", "Пакетная печать была отменена пользователем.")
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -2111,6 +2123,33 @@ class PrintManagerUI(QMainWindow):
         finally:
             progress_dlg.close()
             self.update_print_counter()
+
+    def on_repeat_failed_frames(self, failed_frames: list):
+        """Отмечает в таблице галочками только неудачные / отмененные листы для повторной печати."""
+        if not failed_frames:
+            return
+        failed_handles = {getattr(f, "handle", "") for f in failed_frames if getattr(f, "handle", "")}
+        failed_ids = {getattr(f, "object_id", 0) for f in failed_frames if getattr(f, "object_id", 0)}
+        failed_keys = {(getattr(f, "dwg_path", ""), getattr(f, "sheet_number", "")) for f in failed_frames}
+
+        for row in range(self.table.rowCount()):
+            if row < len(self.frames):
+                frame = self.frames[row]
+                match = False
+                if frame.handle and frame.handle in failed_handles:
+                    match = True
+                elif frame.object_id and frame.object_id in failed_ids:
+                    match = True
+                elif (frame.dwg_path, frame.sheet_number) in failed_keys:
+                    match = True
+
+                chk_widget = self.table.cellWidget(row, 0)
+                if chk_widget:
+                    chk = chk_widget.layout().itemAt(0).widget()
+                    chk.setChecked(match)
+
+        self.update_print_counter()
+        self.lbl_status_right.setText(f"Отмечены для повтора листы: {len(failed_frames)} шт. | Нажмите «ПЕЧАТЬ»")
 
 if __name__ == "__main__":
     from PySide6.QtGui import QFont
