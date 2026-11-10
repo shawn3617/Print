@@ -158,8 +158,6 @@ def get_certificate_config(project_root: Optional[str] = None) -> Optional[Dict[
     dev_cert_candidates = [
         os.path.join(project_root, "dist", "dev_cert.pfx"),
         os.path.join(project_root, "dev_cert.pfx"),
-        os.path.abspath(os.path.join("dist", "dev_cert.pfx")),
-        os.path.abspath("dev_cert.pfx"),
     ]
     for cand in dev_cert_candidates:
         if os.path.isfile(cand):
