@@ -4,7 +4,7 @@ from typing import List, Any, Optional, Tuple
 import pythoncom
 import win32com.client
 
-from core.models import Frame, detect_paper_format, ALL_FORMATS, natural_sheet_sort_key
+from core.models import Frame, detect_paper_format, detect_paper_format_detailed, ALL_FORMATS, natural_sheet_sort_key
 from core.logger import log_warn, log_error
 from parsers.base_parser import BaseParser
 
@@ -480,7 +480,10 @@ class PolylineParser(BaseParser):
             try:
                 x1, y1, x2, y2 = f["bbox"]
                 poly = f["ref"]
-                fmt = f["format"] or detect_paper_format(x2 - x1, y2 - y1, scale=f["scale"])
+                w_poly = abs(x2 - x1)
+                h_poly = abs(y2 - y1)
+                det_res = detect_paper_format_detailed(w_poly, h_poly, scale=f.get("scale"))
+                fmt = f.get("format") or det_res.paper_format
                 frame = Frame(
                     object_id=getattr(poly, 'ObjectID', 0),
                     sheet_number=f["sheet_number"],
@@ -492,7 +495,11 @@ class PolylineParser(BaseParser):
                     handle=getattr(poly, 'Handle', ''),
                     doc_code=f.get("doc_code", ""),
                     object_name=f.get("object_name", ""),
-                    building_name=f.get("building_name", "")
+                    building_name=f.get("building_name", ""),
+                    scale=det_res.scale,
+                    format_reason=det_res.reason,
+                    possible_formats=[(c.paper_format, c.scale) for c in det_res.candidates],
+                    is_ambiguous=det_res.is_ambiguous
                 )
                 frame._debug_texts = f["texts"]
                 frames.append(frame)

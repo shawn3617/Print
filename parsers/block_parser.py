@@ -3,7 +3,7 @@ import time
 import re
 import fnmatch
 from typing import List, Any
-from core.models import Frame, ALL_FORMATS, detect_paper_format
+from core.models import Frame, ALL_FORMATS, detect_paper_format, detect_paper_format_detailed
 from parsers.base_parser import BaseParser
 from core.resource_utils import get_resource_path, get_lisp_path
 from core.logger import log_warn, log_error, log_info
@@ -219,7 +219,19 @@ class BlockParser(BaseParser):
                         attrs[k] = v
 
             explicit_fmt = self._extract_explicit_format(attrs)
-            fmt = explicit_fmt or detect_paper_format(w, h, b_name, scale=sc)
+            det_res = detect_paper_format_detailed(w, h, b_name, scale=sc)
+            if explicit_fmt:
+                fmt = explicit_fmt
+                scale_val = det_res.scale
+                reason = f"Атрибут блока ({explicit_fmt})"
+                possible_fmts = [(c.paper_format, c.scale) for c in det_res.candidates]
+                is_ambig = False
+            else:
+                fmt = det_res.paper_format
+                scale_val = det_res.scale
+                reason = det_res.reason
+                possible_fmts = [(c.paper_format, c.scale) for c in det_res.candidates]
+                is_ambig = det_res.is_ambiguous
 
             num = self._get_attr_value(attrs, self.sheet_attr_tags) or fmt_item.get("sheet_number", "Unknown")
             name = self._extract_sheet_name(attrs, self.title_attr_tags)
@@ -244,7 +256,11 @@ class BlockParser(BaseParser):
                 doc_code=doc_code,
                 object_name=object_name,
                 building_name=building_name,
-                layout_name=layout_name
+                layout_name=layout_name,
+                scale=scale_val,
+                format_reason=reason,
+                possible_formats=possible_fmts,
+                is_ambiguous=is_ambig
             )
             frames.append(frame)
 

@@ -1,7 +1,7 @@
 import re
 import time
 from typing import List, Any
-from core.models import Frame, detect_paper_format, ALL_FORMATS
+from core.models import Frame, detect_paper_format, detect_paper_format_detailed, ALL_FORMATS
 from parsers.base_parser import BaseParser
 from core.logger import log_warn
 from core.resource_utils import get_resource_path, get_lisp_path
@@ -90,8 +90,16 @@ class SPDSParser(BaseParser):
                 h = fh
 
             # 3. Геометрический расчет формата по габаритам
+            det_res = detect_paper_format_detailed(w, h, scale=sc)
             if not detected_fmt:
-                detected_fmt = detect_paper_format(w, h, scale=sc)
+                detected_fmt = det_res.paper_format
+                scale_val = det_res.scale
+                reason = det_res.reason
+                is_ambig = det_res.is_ambiguous
+            else:
+                scale_val = det_res.scale
+                reason = f"Свойства СПДС ({detected_fmt})"
+                is_ambig = False
 
             shifr = clean_rtf(str(item.get("shifr") or "").strip())
             fields = item.get("fields") or {}
@@ -130,7 +138,11 @@ class SPDSParser(BaseParser):
                 doc_code=shifr,
                 object_name=obj_name,
                 building_name=bld_name,
-                layout_name=layout_name
+                layout_name=layout_name,
+                scale=scale_val,
+                format_reason=reason,
+                possible_formats=[(c.paper_format, c.scale) for c in det_res.candidates],
+                is_ambiguous=is_ambig
             )
             frames.append(frame)
 
@@ -177,6 +189,7 @@ class SPDSParser(BaseParser):
                         min_pt, max_pt = obj.GetBoundingBox()
                         w = max_pt[0] - min_pt[0]
                         h = max_pt[1] - min_pt[1]
+                        det_res = detect_paper_format_detailed(w, h)
                         frame = Frame(
                             object_id=getattr(obj, 'ObjectID', 0),
                             sheet_number="Unknown",
@@ -184,9 +197,13 @@ class SPDSParser(BaseParser):
                             min_point=min_pt,
                             max_point=max_pt,
                             source_type=source_type,
-                            paper_format=detect_paper_format(w, h),
+                            paper_format=det_res.paper_format,
                             handle=getattr(obj, 'Handle', ''),
-                            layout_name=lyt_name
+                            layout_name=lyt_name,
+                            scale=det_res.scale,
+                            format_reason=det_res.reason,
+                            possible_formats=[(c.paper_format, c.scale) for c in det_res.candidates],
+                            is_ambiguous=det_res.is_ambiguous
                         )
                         frames.append(frame)
                 except Exception:

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Tuple
+from typing import Any, Tuple, List
 
 # Стандартные размеры ГОСТ форматов (длинная x короткая в мм)
 GOST_FORMATS = {
@@ -54,36 +54,60 @@ for _base_name, (_fw, _fh) in GOST_FORMATS.items():
 # Объединяем все форматы
 ALL_FORMATS = {**GOST_FORMATS, **GOST_EXTENDED}
 
-def detect_paper_format(width: float, height: float, block_name: str = "", scale: float = None) -> str:
+@dataclass
+class FormatCandidate:
+    """Кандидат формата бумаги при математическом распознавании"""
+    paper_format: str                     # Формат (напр. "A2", "A4")
+    scale: int                            # Масштаб (напр. 100, 200)
+    error: float = 0.0                    # Погрешность геометрии
+    reason: str = ""                      # Основание выбора
+
+
+@dataclass
+class FormatDetectionResult:
+    """Детальный результат распознавания формата бумаги"""
+    paper_format: str                     # Итоговый выбранный формат
+    scale: int = 1                        # Выбранный масштаб
+    reason: str = ""                      # Текстовое основание выбора
+    candidates: List[FormatCandidate] = field(default_factory=list) # Все подходящие кандидаты
+    is_ambiguous: bool = False            # Флаг неоднозначности (есть равноценные альтернативы)
+
+
+def detect_paper_format_detailed(width: float, height: float, block_name: str = "", scale: float = None) -> FormatDetectionResult:
     """
-    Определяет формат бумаги. Сначала пытается извлечь его из названия блока.
+    Детально определяет формат бумаги, масштаб, основание выбора и альтернативные варианты.
+    Сначала пытается извлечь формат из названия блока.
     Если передан точный масштаб scale, вычисляет физический размер в мм.
     Иначе определяет по размерам BoundingBox с приоритетом стандартных масштабов ГОСТ (1:100, 1:50, 1:1...).
+    Фиксирует неоднозначность (например, A2 М1:100 = A4 М1:200).
     """
     import re
-    
-    # 1. Пытаемся найти формат (A0..A4, A4x9 и т.д.) прямо в имени блока
+    w, h = max(width, height), min(width, height)
+
+    # 1. Пытаемся найти формат прямо в имени блока
     if block_name:
-        w, h = max(width, height), min(width, height)
         for fmt in sorted(ALL_FORMATS.keys(), key=len, reverse=True):
             if re.search(r'\b' + re.escape(fmt) + r'\b', block_name, re.IGNORECASE) or \
                re.search(r'_' + re.escape(fmt) + r'[_PPL]', block_name, re.IGNORECASE):
                 
-                # Валидация: проверяем, что рамка действительно масштабируется в этот формат
                 fw, fh = ALL_FORMATS[fmt]
                 scale_w = w / fw
                 scale_h = h / fh
                 rw = round(scale_w)
                 rh = round(scale_h)
                 
-                # Допускаем погрешность до 5% для блоков (из-за торчащих атрибутов)
                 if rw == rh and rw >= 1:
                     err_w = abs(scale_w - rw)
                     err_h = abs(scale_h - rh)
                     if err_w / rw < 0.05 and err_h / rh < 0.05:
-                        return fmt
-
-    w, h = max(width, height), min(width, height)
+                        cand = FormatCandidate(fmt, rw, err_w + err_h, f"Имя блока «{block_name}»")
+                        return FormatDetectionResult(
+                            paper_format=fmt,
+                            scale=rw,
+                            reason=f"Имя блока «{block_name}»",
+                            candidates=[cand],
+                            is_ambiguous=False
+                        )
 
     # 2. Если известен точный масштаб (например, из свойств СПДС)
     if scale and scale > 0:
@@ -96,12 +120,19 @@ def detect_paper_format(width: float, height: float, block_name: str = "", scale
             if diff < min_err:
                 min_err = diff
                 best_fmt = fmt
-        if best_fmt and min_err < 15.0: # Погрешность в пределах 15 мм
-            return best_fmt
+        if best_fmt and min_err < 15.0:
+            sc_int = int(round(scale)) if abs(scale - round(scale)) < 0.01 else scale
+            cand = FormatCandidate(best_fmt, sc_int, min_err, f"Свойства СПДС (М 1:{sc_int})")
+            return FormatDetectionResult(
+                paper_format=best_fmt,
+                scale=sc_int,
+                reason=f"Свойства СПДС (М 1:{sc_int})",
+                candidates=[cand],
+                is_ambiguous=False
+            )
 
     # 3. Математическое определение по размерам
     matches = []  # Список (суммарная_ошибка, масштаб, формат)
-    
     for fmt, (fw, fh) in ALL_FORMATS.items():
         scale_w = w / fw
         scale_h = h / fh
@@ -114,7 +145,7 @@ def detect_paper_format(width: float, height: float, block_name: str = "", scale
             total_err = err_w + err_h
             if err_w / rw < 0.005 and err_h / rh < 0.005:
                 matches.append((total_err, rw, fmt))
-    
+
     if matches:
         def match_priority(m):
             err, sc, fmt = m
@@ -129,9 +160,40 @@ def detect_paper_format(width: float, height: float, block_name: str = "", scale
             return (r_err, scale_rank, sc)
             
         matches.sort(key=match_priority)
-        return matches[0][2]
-    
-    # Фолбэк: определяем по короткой стороне
+        best_err, best_sc, best_fmt = matches[0]
+
+        candidates = [
+            FormatCandidate(
+                paper_format=fmt,
+                scale=sc,
+                error=round(err, 4),
+                reason=f"Геометрия М1:{sc}"
+            )
+            for err, sc, fmt in matches
+        ]
+
+        # Проверяем неоднозначность: если есть альтернативный кандидат со стандартным масштабом
+        # и малой погрешностью (например, A2 М1:100 и A4 М1:200)
+        standard_scales = {1, 2, 5, 10, 20, 25, 50, 100, 200, 500}
+        alts = [
+            c for c in candidates
+            if c.paper_format != best_fmt and c.scale in standard_scales and c.error < 0.01
+        ]
+        is_ambiguous = len(alts) > 0
+
+        reason_str = f"Геометрия М1:{best_sc}"
+        if is_ambiguous:
+            reason_str += f" (неоднозначно: альтернатива {alts[0].paper_format} М1:{alts[0].scale})"
+
+        return FormatDetectionResult(
+            paper_format=best_fmt,
+            scale=best_sc,
+            reason=reason_str,
+            candidates=candidates,
+            is_ambiguous=is_ambiguous
+        )
+
+    # 4. Фолбэк: определяем по короткой стороне
     fallback = []
     for fmt, (fw, fh) in ALL_FORMATS.items():
         scale_val = h / fh
@@ -140,7 +202,7 @@ def detect_paper_format(width: float, height: float, block_name: str = "", scale
             err = abs(scale_val - r)
             if err / r < 0.005:
                 fallback.append((err, r, fmt))
-    
+
     if fallback:
         def fallback_priority(m):
             err, sc, fmt = m
@@ -148,9 +210,39 @@ def detect_paper_format(width: float, height: float, block_name: str = "", scale
             scale_rank = -10 if sc == 100 else (-5 if sc in [1, 50, 20, 200] else 0)
             return (r_err, scale_rank, sc)
         fallback.sort(key=fallback_priority)
-        return fallback[0][2]
-    
-    return "A2"
+        best_err, best_sc, best_fmt = fallback[0]
+        cands = [
+            FormatCandidate(
+                paper_format=fmt,
+                scale=sc,
+                error=round(err, 4),
+                reason=f"Приближение по высоте М1:{sc}"
+            )
+            for err, sc, fmt in fallback
+        ]
+        return FormatDetectionResult(
+            paper_format=best_fmt,
+            scale=best_sc,
+            reason=f"Приближение по высоте М1:{best_sc}",
+            candidates=cands,
+            is_ambiguous=True
+        )
+
+    return FormatDetectionResult(
+        paper_format="A2",
+        scale=1,
+        reason="По умолчанию (A2)",
+        candidates=[FormatCandidate("A2", 1, 0.0, "По умолчанию")],
+        is_ambiguous=True
+    )
+
+
+def detect_paper_format(width: float, height: float, block_name: str = "", scale: float = None) -> str:
+    """
+    Определяет формат бумаги (обратная совместимость).
+    Возвращает строку формата (напр. 'A4', 'A3', 'A2').
+    """
+    return detect_paper_format_detailed(width, height, block_name=block_name, scale=scale).paper_format
 
 def detect_format_from_media_name(media_name: str) -> str:
     """
@@ -237,4 +329,9 @@ class Frame:
     building_name: str = ""                 # Наименование здания / сооружения (графа 3)
     layout_name: str = "Model"              # Имя вкладки пространства листа ("Model", "Лист1", "Layout1" и т.д.)
     fallback_warning: str = ""              # Предупреждение о резервном формате / нестыковках бумаги
+    scale: int = 1                          # Масштаб чертежа (100 для 1:100)
+    format_reason: str = ""                 # Основание выбора формата ("Имя блока", "Геометрия М1:100", "Вручную")
+    possible_formats: List[Tuple[str, int]] = field(default_factory=list) # Альтернативы [(format, scale)]
+    is_ambiguous: bool = False              # Флаг неоднозначности формата
+    user_override: bool = False             # Флаг ручного изменения пользователем
 

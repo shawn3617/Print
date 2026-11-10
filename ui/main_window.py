@@ -29,6 +29,7 @@ from ui.help_dialog import HelpDialog
 from ui.about_dialog import AboutDialog, APP_VERSION
 from ui.diagnostics_dialog import DiagnosticsDialog
 from ui.report_dialog import ReportDialog
+from ui.format_dialog import FormatSelectDialog
 
 
 class ReorderableTableWidget(QTableWidget):
@@ -1241,7 +1242,8 @@ class PrintManagerUI(QMainWindow):
         doc_code: str = "",
         object_name: str = "",
         building_name: str = "",
-        fallback_warning: str = ""
+        fallback_warning: str = "",
+        frame: Any = None
     ):
         row = self.table.rowCount()
         self.table.insertRow(row)
@@ -1278,16 +1280,7 @@ class PrintManagerUI(QMainWindow):
         item_bld.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         item_bld.setToolTip(building_name)
 
-        fmt_display = paper_format or "Не определен"
-        if fallback_warning:
-            item_fmt = QTableWidgetItem(f"⚠️ {fmt_display}")
-            item_fmt.setToolTip(f"⚠️ {fallback_warning}")
-        elif fmt_display not in ALL_FORMATS:
-            item_fmt = QTableWidgetItem(f"⚠️ {fmt_display}")
-            item_fmt.setToolTip(f"⚠️ Нестандартный формат «{fmt_display}». При печати будет применен резервный формат.")
-        else:
-            item_fmt = QTableWidgetItem(fmt_display)
-            item_fmt.setToolTip(fmt_display)
+        item_fmt = QTableWidgetItem(paper_format or "Не определен")
         item_fmt.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
         item_dwg = QTableWidgetItem(dwg_name)
@@ -1310,29 +1303,134 @@ class PrintManagerUI(QMainWindow):
         self.table.setItem(row, 7, item_dwg)
         self.table.setItem(row, 8, item_src)
 
+        f_obj = frame if frame else (self.frames[row] if row < len(self.frames) else None)
+        if f_obj:
+            self._update_format_item(row, f_obj)
+        elif fallback_warning:
+            item_fmt.setText(f"⚠️ {paper_format}")
+            item_fmt.setToolTip(f"⚠️ {fallback_warning}")
+
         if not getattr(self, "_is_updating_table", False):
             self.update_print_counter()
 
+    def _update_format_item(self, row: int, frame: Any):
+        """Оформляет ячейку формата: текст, масштаб, бейдж ⚠️/✏️ и всплывающую подсказку."""
+        item = self.table.item(row, 6)
+        if not item:
+            return
+
+        fmt_display = getattr(frame, "paper_format", "") or "Не определен"
+        warn = getattr(frame, "fallback_warning", "")
+        is_ambig = getattr(frame, "is_ambiguous", False)
+        user_over = getattr(frame, "user_override", False)
+        fmt_reason = getattr(frame, "format_reason", "")
+        scale_val = getattr(frame, "scale", 1) or 1
+        pos_fmts = getattr(frame, "possible_formats", [])
+
+        if warn:
+            item.setText(f"⚠️ {fmt_display}")
+            item.setToolTip(f"⚠️ {warn}\n\n(Дважды кликните по ячейке для ручного выбора формата)")
+        elif is_ambig and not user_over:
+            item.setText(f"⚠️ {fmt_display}")
+            alts = [f"{af} (М1:{asc})" for af, asc in pos_fmts if af != fmt_display]
+            alt_text = f"\nВозможные альтернативы: {', '.join(alts)}" if alts else ""
+            item.setToolTip(
+                f"⚠️ Неоднозначный формат!\n"
+                f"Выбран: {fmt_display} (масштаб 1:{scale_val}), основание: {fmt_reason}."
+                f"{alt_text}\n\n"
+                f"Дважды кликните по ячейке или нажмите правой кнопкой, чтобы уточнить формат."
+            )
+        elif user_over:
+            item.setText(f"✏️ {fmt_display}")
+            item.setToolTip(
+                f"Формат задан вручную: {fmt_display} (масштаб 1:{scale_val})\n"
+                f"Основание: {fmt_reason}\n\n"
+                f"Дважды кликните для изменения."
+            )
+        elif fmt_display not in ALL_FORMATS:
+            item.setText(f"⚠️ {fmt_display}")
+            item.setToolTip(
+                f"⚠️ Нестандартный формат «{fmt_display}». При печати будет применен резервный формат.\n"
+                f"(Дважды кликните для выбора стандартного формата)"
+            )
+        else:
+            scale_str = f" (М1:{scale_val})" if scale_val > 1 else ""
+            item.setText(f"{fmt_display}{scale_str}")
+            item.setToolTip(
+                f"Формат: {fmt_display}{scale_str}\n"
+                f"Основание: {fmt_reason or 'Геометрия'}\n\n"
+                f"Дважды кликните для изменения."
+            )
+
     def _refresh_table_formats(self):
-        """Обновляет колонку форматов с индикацией предупреждений о резервном формате."""
+        """Обновляет колонку форматов с индикацией предупреждений о резервном формате и неоднозначности."""
         for row in range(self.table.rowCount()):
             if row < len(self.frames):
                 frame = self.frames[row]
-                fmt_display = frame.paper_format or "Не определен"
-                warn = getattr(frame, "fallback_warning", "")
-                if not warn and fmt_display not in ALL_FORMATS:
-                    warn = f"Нестандартный формат «{fmt_display}». При печати будет применен резервный формат."
-                item = self.table.item(row, 6)
-                if item:
-                    if warn:
-                        item.setText(f"⚠️ {fmt_display}")
-                        item.setToolTip(f"⚠️ {warn}")
-                    else:
-                        item.setText(fmt_display)
-                        item.setToolTip(fmt_display)
+                self._update_format_item(row, frame)
         
         if not getattr(self, "_is_updating_table", False):
             self.update_print_counter()
+
+    def get_selected_sheet_rows(self) -> List[int]:
+        """Возвращает список индексов выделенных строк таблицы"""
+        if not self.table.selectionModel():
+            return []
+        rows = sorted(list(set(idx.row() for idx in self.table.selectionModel().selectedRows())))
+        return rows
+
+    def change_sheet_format(self, row: int):
+        """Открывает диалог ручного уточнения формата и масштаба листа."""
+        if not (0 <= row < len(self.frames)):
+            return
+        frame = self.frames[row]
+        selected_rows = self.get_selected_sheet_rows()
+        selected_count = len(selected_rows) if (selected_rows and row in selected_rows and len(selected_rows) > 1) else 1
+
+        dlg = FormatSelectDialog(
+            parent=self,
+            frame=frame,
+            selected_count=selected_count
+        )
+        if dlg.exec():
+            new_fmt = dlg.get_selected_format()
+            new_scale = dlg.get_selected_scale()
+            apply_all = dlg.apply_to_selected_rows()
+
+            target_rows = selected_rows if apply_all else [row]
+            if row not in target_rows:
+                target_rows.append(row)
+
+            for r in target_rows:
+                if 0 <= r < len(self.frames):
+                    f = self.frames[r]
+                    f.paper_format = new_fmt
+                    f.scale = new_scale
+                    f.format_reason = f"Задано вручную: {new_fmt} (М1:{new_scale})"
+                    f.is_ambiguous = False
+                    f.user_override = True
+                    f.fallback_warning = ""
+                    self._update_format_item(r, f)
+
+            self.update_print_counter()
+            self.update_format_filter_items()
+            log_info(f"Формат листа {frame.sheet_number} изменен пользователем на {new_fmt} (М1:{new_scale})", module="UI")
+
+    def quick_switch_format(self, row: int, new_format: str, new_scale: int):
+        """Быстрое переключение формата на альтернативный вариант из контекстного меню."""
+        if not (0 <= row < len(self.frames)):
+            return
+        frame = self.frames[row]
+        frame.paper_format = new_format
+        frame.scale = new_scale
+        frame.format_reason = f"Уточнено пользователем: {new_format} (М1:{new_scale})"
+        frame.is_ambiguous = False
+        frame.user_override = True
+        frame.fallback_warning = ""
+        self._update_format_item(row, frame)
+        self.update_print_counter()
+        self.update_format_filter_items()
+        log_info(f"Быстрое переключение формата листа {frame.sheet_number} на {new_format} (М1:{new_scale})", module="UI")
         
     def is_filter_active(self) -> bool:
         """Возвращает True, если активен поиск по тексту или выбран конкретный формат."""
@@ -1767,6 +1865,23 @@ class PrintManagerUI(QMainWindow):
             act_show.triggered.connect(self.show_current_frame_in_autocad)
             menu.addAction(act_show)
 
+            if row < len(self.frames):
+                frame = self.frames[row]
+                act_fmt = QAction(f"✏️ Уточнить / изменить формат «{frame.paper_format}»...", self)
+                act_fmt.triggered.connect(lambda _, r=row: self.change_sheet_format(r))
+                menu.addAction(act_fmt)
+
+                possible = getattr(frame, "possible_formats", [])
+                alts = [(f, s) for f, s in possible if f != frame.paper_format]
+                if alts:
+                    quick_menu = menu.addMenu("➜ Быстро переключить формат")
+                    for alt_fmt, alt_scale in alts:
+                        act_alt = QAction(f"{alt_fmt} (масштаб 1:{alt_scale})", self)
+                        act_alt.triggered.connect(
+                            lambda _, r=row, af=alt_fmt, asc=alt_scale: self.quick_switch_format(r, af, asc)
+                        )
+                        quick_menu.addAction(act_alt)
+
             menu.addSeparator()
 
             act_only_this = QAction("Печатать только этот лист", self)
@@ -1953,6 +2068,9 @@ class PrintManagerUI(QMainWindow):
             self.connector.show_frame(frame, zoom=True, highlight=True)
 
     def on_table_cell_double_clicked(self, row: int, column: int):
+        if column == 6:  # Колонка "Формат" — ручное уточнение / изменение формата
+            self.change_sheet_format(row)
+            return
         if 0 <= row < len(self.frames):
             frame = self.frames[row]
             try:

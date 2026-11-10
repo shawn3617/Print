@@ -124,6 +124,12 @@ class DocumentScanner:
                                     # Меняем только если формат при доминирующем масштабе садится не хуже текущего
                                     if err_corr <= err_curr + 1.0:
                                         f.paper_format = corrected_fmt
+                                        f.scale = common_scale
+                                        f.format_reason = f"Доминирующий масштаб проекта 1:{common_scale}"
+                                        f.is_ambiguous = False
+                            elif getattr(f, "scale", 1) == common_scale and getattr(f, "is_ambiguous", False):
+                                f.format_reason = f"Подтверждено проектом (М1:{common_scale})"
+                                f.is_ambiguous = False
             except Exception as e:
                 print(f"Ошибка при согласовании масштабов: {e}")
                 log_warn("Ошибка при согласовании масштабов", exc=e, module="Scanner")
