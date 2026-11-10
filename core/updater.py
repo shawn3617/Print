@@ -286,24 +286,29 @@ def apply_update_and_restart(installer_path: str, silent: bool = True) -> bool:
     local_appdata = os.environ.get("LOCALAPPDATA", "")
     target_exe = os.path.join(local_appdata, "Programs", "PrintPDF", "PrintPDF.exe")
 
-    # Inno Setup аргументы: /SILENT (тихий интерфейс), /SUPPRESSMSGBOXES, /NORESTART
-    silent_args = "/SILENT /SUPPRESSMSGBOXES /NORESTART" if silent else ""
+    # Inno Setup: /SILENT показывает аккуратный прогресс установки, /NORESTART
+    silent_args = "/SILENT /NORESTART" if silent else ""
 
-    # Командная строка: ждём 1.5 сек пока завершится текущий процесс, запускаем инсталлятор с ожиданием, запускаем обновленный exe
-    batch_cmd = (
-        f'powershell.exe -NoProfile -Command "'
-        f'Start-Sleep -Milliseconds 1200; '
-        f'$p = Start-Process -FilePath \'{installer_path}\' -ArgumentList \'{silent_args}\' -PassThru -Wait; '
-        f'if (Test-Path \'{target_exe}\') {{ Start-Process -FilePath \'{target_exe}\' }}"'
-    )
+    safe_installer = os.path.abspath(installer_path).replace("'", "''")
+    safe_target_exe = os.path.abspath(target_exe).replace("'", "''")
+
+    batch_cmd = [
+        "powershell.exe",
+        "-NoProfile",
+        "-Command",
+        f"Start-Sleep -Milliseconds 1200; "
+        f"$p = Start-Process -FilePath '{safe_installer}' -ArgumentList '{silent_args}' -PassThru -Wait; "
+        f"if (Test-Path '{safe_target_exe}') {{ Start-Process -FilePath '{safe_target_exe}' -WindowStyle Normal }}"
+    ]
 
     try:
-        # Запускаем отсоединенный процесс, который продолжит жить после выхода программы
-        flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0  # SW_HIDE
         subprocess.Popen(
             batch_cmd,
-            shell=False,
-            creationflags=flags,
+            startupinfo=startupinfo,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
             close_fds=True
         )
         return True
@@ -400,7 +405,7 @@ try {{
 
     # Запускаем обновлённую программу
     if (Test-Path $TargetExe) {{
-        Start-Process -FilePath $TargetExe
+        Start-Process -FilePath $TargetExe -WindowStyle Normal
     }}
 }} catch {{
     $logFile = Join-Path $env:TEMP "printpdf_portable_update_error.log"
@@ -414,17 +419,18 @@ try {{
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(ps_content)
 
-        flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0  # SW_HIDE
         subprocess.Popen(
             [
                 "powershell.exe",
                 "-NoProfile",
                 "-ExecutionPolicy", "Bypass",
-                "-WindowStyle", "Hidden",
                 "-File", script_path
             ],
-            shell=False,
-            creationflags=flags,
+            startupinfo=startupinfo,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
             close_fds=True
         )
         return True
