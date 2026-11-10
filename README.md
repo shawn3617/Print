@@ -21,7 +21,7 @@
 
 Поддерживаются русские AutoCAD 2021 (R24.0) и 2024 (R24.3).
 
-## Запуск из исходников (Windows, папка проекта `d:\Projects\Print`)
+## Запуск из исходников (Windows, папка проекта `d:\Project\Print`)
 
 ```powershell
 python -m venv .venv
