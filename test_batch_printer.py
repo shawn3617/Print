@@ -81,6 +81,51 @@ class TestBatchPrinter(unittest.TestCase):
         )
         mock_connector.close_document.assert_called_once_with(doc2, save_changes=False)
 
+    def test_custom_filename_template_and_deduplication(self):
+        f1 = os.path.abspath("C:/Drawings/plan1.dwg")
+        doc1 = MagicMock()
+        doc1.FullName = f1
+        doc1.Name = "plan1.dwg"
+        doc1.ModelSpace.Layout.GetCanonicalMediaNames.return_value = ["ISO_A4"]
+        doc1.ModelSpace.Layout.GetLocaleMediaName.return_value = "ISO A4 (210 x 297)"
+
+        mock_connector = MagicMock()
+        mock_connector.get_open_documents.return_value = [(f1, "plan1.dwg")]
+        mock_connector.open_document.side_effect = lambda p, read_only=True: (doc1, False)
+
+        # Два листа с одинаковым номером и именем в одном файле
+        frame1 = Frame(
+            object_id=1, sheet_number="1", sheet_name="План",
+            min_point=(0, 0, 0), max_point=(297, 210, 0),
+            source_type="Model", paper_format="A4",
+            dwg_path=f1, dwg_name="plan1.dwg", doc_code="ПР-01"
+        )
+        frame2 = Frame(
+            object_id=2, sheet_number="1", sheet_name="План",
+            min_point=(0, 0, 0), max_point=(297, 210, 0),
+            source_type="Model", paper_format="A4",
+            dwg_path=f1, dwg_name="plan1.dwg", doc_code="ПР-01"
+        )
+
+        printed_files = []
+        doc1.Plot.PlotToFile.side_effect = lambda f, p: printed_files.append(f)
+
+        printer = BatchPrinter(doc=doc1, connector=mock_connector)
+        printer.print_frames(
+            frames=[frame1, frame2],
+            printer_name="DWG To PDF.pc3",
+            canonical_media_name="ISO_A4",
+            style_name="monochrome.ctb",
+            output_path=os.path.abspath("C:/Out"),
+            merge_pdf=False,
+            filename_template="{Шифр}_{Номер}_{Наименование}"
+        )
+
+        self.assertEqual(len(printed_files), 2)
+        # Первый дубликат получает _1, второй _2
+        self.assertTrue(printed_files[0].endswith("ПР-01_1_План_1.pdf"))
+        self.assertTrue(printed_files[1].endswith("ПР-01_1_План_2.pdf"))
+
 
 if __name__ == "__main__":
     unittest.main()

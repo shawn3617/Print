@@ -19,6 +19,8 @@
     140,
     90
   ],
+  "auto_check_updates": true,
+  "filename_template": "Лист {Номер} - {Наименование}",
   "theme": "light",
   "hidden_columns": []
 }

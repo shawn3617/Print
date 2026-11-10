@@ -25,6 +25,13 @@ from core.models import natural_sheet_sort_key, frame_natural_sort_key, ALL_FORM
 from core.exporter import SheetExporter
 from core.resource_utils import get_resource_path
 from core.logger import init_logging, log_info, log_warn, log_error
+from core.filename_template import (
+    PRESET_TEMPLATES,
+    TEMPLATE_VARIABLES,
+    get_default_template,
+    preview_filename,
+    render_filename,
+)
 from ui.themes import THEMES, build_theme_qss, get_theme_status_colors, apply_title_bar_theme
 from ui.help_dialog import HelpDialog
 from ui.about_dialog import AboutDialog, APP_VERSION
@@ -534,10 +541,35 @@ class PrintManagerUI(QMainWindow):
         
         self.combo_mode = QComboBox()
         self.combo_mode.addItems(["В отдельные файлы", "В один файл (PDF)"])
-        self.combo_mode.currentTextChanged.connect(lambda _: self.save_settings())
+        self.combo_mode.currentTextChanged.connect(self.on_mode_changed)
         form_layout.addRow(QLabel("Режим:"), self.combo_mode)
 
-        for cb in [self.combo_printers, self.combo_papers, self.combo_style, self.combo_mode]:
+        self.combo_template = QComboBox()
+        self.combo_template.setEditable(True)
+        self.combo_template.setView(QListView())
+        for _, tpl in PRESET_TEMPLATES:
+            self.combo_template.addItem(tpl)
+        self.combo_template.setToolTip(
+            "Шаблон имени файла при экспорте в отдельные PDF.\n"
+            "Переменные:\n"
+            "  {Шифр} — обозначение документа / шифр\n"
+            "  {Номер} или {Номер:02d} — номер листа\n"
+            "  {Наименование} — название листа\n"
+            "  {Формат} — формат бумаги (A3, A2...)\n"
+            "  {DWG} — имя исходного чертежа\n"
+            "  {Объект} — наименование объекта\n"
+            "  {Здание} — здание / сооружение\n"
+            "  {Масштаб} — масштаб"
+        )
+        self.combo_template.currentTextChanged.connect(self.on_template_changed)
+        form_layout.addRow(QLabel("Шаблон:"), self.combo_template)
+
+        self.lbl_template_preview = QLabel("Пример:")
+        self.lbl_template_preview.setWordWrap(True)
+        self.lbl_template_preview.setStyleSheet("color: #89b4fa; font-size: 11px;")
+        form_layout.addRow("", self.lbl_template_preview)
+
+        for cb in [self.combo_printers, self.combo_papers, self.combo_style, self.combo_mode, self.combo_template]:
             cb.setView(QListView())
             cb.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
             cb.setMinimumContentsLength(8)
@@ -724,6 +756,17 @@ class PrintManagerUI(QMainWindow):
         if hasattr(self, "edit_block_name") and isinstance(saved_custom_block, str):
             self.edit_block_name.setText(saved_custom_block)
 
+        saved_template = cfg.get("filename_template", "Лист {Номер} - {Наименование}")
+        if hasattr(self, "combo_template") and isinstance(saved_template, str) and saved_template:
+            idx_tpl = self.combo_template.findText(saved_template)
+            if idx_tpl >= 0:
+                self.combo_template.blockSignals(True)
+                self.combo_template.setCurrentIndex(idx_tpl)
+                self.combo_template.blockSignals(False)
+            else:
+                self.combo_template.setEditText(saved_template)
+        self.update_template_preview()
+
         # Восстановление скрытых колонок
         hidden_cols = cfg.get("hidden_columns", [])
         if isinstance(hidden_cols, list):
@@ -782,6 +825,31 @@ class PrintManagerUI(QMainWindow):
         self.update_paper_sizes(printer_name)
         self.save_settings()
 
+    def on_mode_changed(self, text: str = ""):
+        self.update_template_preview()
+        self.save_settings()
+
+    def on_template_changed(self, text: str = ""):
+        self.update_template_preview()
+        self.save_settings()
+
+    def update_template_preview(self):
+        tpl = self.combo_template.currentText().strip() if hasattr(self, "combo_template") else ""
+        if not tpl:
+            tpl = get_default_template()
+        target_frame = None
+        if hasattr(self, "table") and hasattr(self, "frames") and self.frames:
+            curr_row = self.table.currentRow()
+            if 0 <= curr_row < len(self.frames):
+                target_frame = self.frames[curr_row]
+            else:
+                target_frame = self.frames[0]
+        preview = preview_filename(tpl, target_frame)
+        if hasattr(self, "lbl_template_preview"):
+            is_merged = (hasattr(self, "combo_mode") and self.combo_mode.currentIndex() == 1)
+            suffix = " (для отд. файлов)" if is_merged else ""
+            self.lbl_template_preview.setText(f"Пример: {preview}{suffix}")
+
     def save_settings(self):
         """Сохраняет текущие параметры печати и состояния чекбоксов в config.json."""
         if getattr(self, "_is_loading_config", False):
@@ -792,6 +860,7 @@ class PrintManagerUI(QMainWindow):
         paper_text = self.combo_papers.currentText()
         mode_text = self.combo_mode.currentText()
         source_text = self.combo_source.currentText()
+        template_text = self.combo_template.currentText().strip() if hasattr(self, "combo_template") else ""
         theme_val = self.combo_theme.currentData() if hasattr(self, "combo_theme") else getattr(self, "current_theme", "dark_catppuccin")
         frame_type_val = self.combo_frame_type.currentData() if hasattr(self, "combo_frame_type") else "spds"
         custom_block_val = self.edit_block_name.text() if hasattr(self, "edit_block_name") else ""
@@ -807,6 +876,7 @@ class PrintManagerUI(QMainWindow):
             "fallback_paper_canonical": (self.paper_dict.get(paper_text, "") if paper_text
                                          else current_cfg.get("fallback_paper_canonical", "")),
             "merge_mode": mode_text if mode_text else current_cfg.get("merge_mode", "В один файл (PDF)"),
+            "filename_template": template_text if template_text else current_cfg.get("filename_template", "Лист {Номер} - {Наименование}"),
             "open_after_print": self.chk_open_after.isChecked(),
             "sync_autocad": self.chk_sync_acad.isChecked(),
             "source_mode": source_text if source_text else current_cfg.get("source_mode", "Модель (Model Space)"),
@@ -1570,6 +1640,7 @@ class PrintManagerUI(QMainWindow):
         return selected
 
     def update_print_counter(self):
+        self.update_template_preview()
         count = 0
         total_visible = 0
         total_sheets = self.table.rowCount()
@@ -2058,6 +2129,7 @@ class PrintManagerUI(QMainWindow):
 
 
     def on_table_cell_changed(self, current_row: int, current_column: int, previous_row: int, previous_column: int):
+        self.update_template_preview()
         if self._is_updating_table:
             return
         if not hasattr(self, 'chk_sync_acad') or not self.chk_sync_acad.isChecked():
@@ -2167,6 +2239,9 @@ class PrintManagerUI(QMainWindow):
         local_paper_name = self.combo_papers.currentText()
         sys_paper_name = self.paper_dict.get(local_paper_name, local_paper_name)
         style_name = self.combo_style.currentText()
+        filename_template = self.combo_template.currentText().strip() if hasattr(self, "combo_template") else ""
+        if not filename_template:
+            filename_template = get_default_template()
         
         # 4. Запускаем пакетную печать с диалогом прогресса
         self.btn_print.setEnabled(False)
@@ -2194,7 +2269,8 @@ class PrintManagerUI(QMainWindow):
                 output_path=output_path,
                 merge_pdf=merge_pdf,
                 progress_callback=on_progress,
-                is_cancelled=is_cancelled
+                is_cancelled=is_cancelled,
+                filename_template=filename_template
             )
             
             progress_dlg.close()

@@ -1,5 +1,6 @@
 import os
 import logging
+from typing import Optional, List, Dict, Tuple, Any
 import win32com.client
 import pythoncom
 
@@ -16,6 +17,7 @@ from core.autocad_connector import _retry_busy
 from core.plotter_installer import install_bundled_plotters
 from core.logger import log_warn, log_error
 from core.report_models import PrintReport, PrintItemResult
+from core.filename_template import render_filename, resolve_duplicates, get_default_template
 
 
 def _safe_file_part(text, max_len: int) -> str:
@@ -373,7 +375,8 @@ class BatchPrinter:
             return False
 
     def print_frames(self, frames, printer_name: str, canonical_media_name: str, style_name: str, output_path: str, merge_pdf: bool = False, progress_callback=None, is_cancelled=None,
-                     close_opened_docs: bool = False, continue_on_error: bool = True) -> PrintReport:
+                     close_opened_docs: bool = False, continue_on_error: bool = True,
+                     filename_template: Optional[str] = None) -> PrintReport:
         """
         Отправляет выбранные рамки на печать в PDF.
         canonical_media_name используется как фолбэк, если не удалось подобрать формат.
@@ -472,6 +475,19 @@ class BatchPrinter:
         # Проверяем, содержат ли рамки несколько разных DWG
         unique_dwgs = {os.path.abspath(f.dwg_path).lower() for f in frames if getattr(f, "dwg_path", "")}
         has_multiple_dwgs = len(unique_dwgs) > 1
+
+        active_template = filename_template or get_default_template()
+        raw_filenames = []
+        for idx, frame in enumerate(frames):
+            fn = render_filename(active_template, frame, dwg_name=getattr(frame, "dwg_name", ""), index=idx + 1)
+            if has_multiple_dwgs and "{DWG}" not in active_template and getattr(frame, "dwg_name", ""):
+                raw_dwg_base = os.path.splitext(frame.dwg_name)[0]
+                clean_dwg_base = _safe_file_part(raw_dwg_base, 40)
+                if clean_dwg_base:
+                    fn = f"[{clean_dwg_base}] {fn}"
+            raw_filenames.append(fn)
+
+        batch_filenames = resolve_duplicates(raw_filenames)
 
         # Создаем временную папку для temp-файлов (если режим merge)
         temp_dir = None
@@ -739,18 +755,11 @@ class BatchPrinter:
                     
                         _retry_busy(setup_model_params)
 
-                    dwg_prefix = ""
-                    if has_multiple_dwgs and getattr(frame, "dwg_name", ""):
-                        raw_dwg_base = os.path.splitext(frame.dwg_name)[0]
-                        clean_dwg_base = _safe_file_part(raw_dwg_base, 40)
-                        if clean_dwg_base:
-                            dwg_prefix = f"[{clean_dwg_base}] "
-
                     if merge_pdf:
-                        filename = f"{i:04d}_{dwg_prefix}Лист {safe_num} - {safe_name}.pdf"
+                        filename = f"{i:04d}_{batch_filenames[i]}"
                         filepath = os.path.join(temp_dir, filename)
                     else:
-                        filename = f"{dwg_prefix}Лист {safe_num} - {safe_name}.pdf"
+                        filename = batch_filenames[i]
                         filepath = os.path.abspath(os.path.join(output_path, filename))
                     
                     # Печать листа через PlotToFile с обработкой занятости AutoCAD (RPC_E_CALL_REJECTED)
