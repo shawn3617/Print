@@ -16,6 +16,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "table_column_widths": [65, 60, 180, 260, 220, 200, 75, 140, 90],
     "auto_check_updates": True,
     "filename_template": "Лист {Номер} - {Наименование}",
+    "active_profile": "По умолчанию",
+    "profiles": {},
 }
 
 

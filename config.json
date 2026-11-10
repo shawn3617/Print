@@ -21,6 +21,8 @@
   ],
   "auto_check_updates": true,
   "filename_template": "Лист {Номер} - {Наименование}",
+  "active_profile": "По умолчанию",
+  "profiles": {},
   "theme": "light",
   "hidden_columns": []
 }

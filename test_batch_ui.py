@@ -304,13 +304,14 @@ class TestBatchUI(unittest.TestCase):
         self.assertTrue(self.win.is_row_checked(2))
 
         # 4. Копировать строку в буфер обмена
-        self.win.copy_full_row(0)
-        QApplication.processEvents()
-        clipboard_text = QGuiApplication.clipboard().text()
-        self.assertIn("1", clipboard_text)
-        self.assertIn("2024-АР-1", clipboard_text)
-        self.assertIn("Лист 1", clipboard_text)
-        self.assertIn("file1.dwg", clipboard_text)
+        with patch.object(QGuiApplication.clipboard(), "setText") as mock_set:
+            self.win.copy_full_row(0)
+            mock_set.assert_called_once()
+            copied_text = mock_set.call_args[0][0]
+            self.assertIn("1", copied_text)
+            self.assertIn("2024-АР-1", copied_text)
+            self.assertIn("Лист 1", copied_text)
+            self.assertIn("file1.dwg", copied_text)
 
     def test_frame_type_selection_and_ui_state(self):
         # Проверяем элементы группы "Поиск рамок"

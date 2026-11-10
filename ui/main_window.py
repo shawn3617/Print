@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QPushButton, QComboBox,
     QLabel, QHeaderView, QCheckBox, QGroupBox, QFormLayout,
     QMessageBox, QFileDialog, QAbstractItemView, QDialog, QProgressBar,
-    QLineEdit, QSizePolicy, QListView, QFrame, QMenu
+    QLineEdit, QSizePolicy, QListView, QFrame, QMenu, QInputDialog
 )
 from PySide6.QtCore import Qt, Signal, QMimeData, QTimer
 from PySide6.QtGui import QDrag, QAction, QGuiApplication, QShortcut, QKeySequence, QIcon
@@ -32,6 +32,7 @@ from core.filename_template import (
     preview_filename,
     render_filename,
 )
+from core.profile_manager import ProfileManager, DEFAULT_PROFILE_NAME
 from ui.themes import THEMES, build_theme_qss, get_theme_status_colors, apply_title_bar_theme
 from ui.help_dialog import HelpDialog
 from ui.about_dialog import AboutDialog, APP_VERSION
@@ -208,6 +209,7 @@ class PrintManagerUI(QMainWindow):
         self.setMinimumSize(780, 480)
         self.setAcceptDrops(True)
         self.config_manager = config_manager or ConfigManager()
+        self.profile_manager = ProfileManager(self.config_manager)
         self._is_loading_config = True
         self.connector = AutoCADConnector()
         self.scanner = DocumentScanner()
@@ -522,6 +524,40 @@ class PrintManagerUI(QMainWindow):
         theme_layout.addWidget(self.combo_theme, stretch=1)
         right_layout.addLayout(theme_layout)
 
+        # Профиль проекта
+        group_profile = QGroupBox("Профиль проекта")
+        profile_layout = QVBoxLayout(group_profile)
+        profile_layout.setSpacing(6)
+
+        self.combo_profile = QComboBox()
+        self.combo_profile.setView(QListView())
+        self.combo_profile.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_profile.setMinimumContentsLength(8)
+        self.combo_profile.setToolTip("Выберите сохранённый профиль настроек для проекта или задачи")
+        self.combo_profile.currentTextChanged.connect(self.on_profile_selected)
+        profile_layout.addWidget(self.combo_profile)
+
+        profile_btns = QHBoxLayout()
+        profile_btns.setSpacing(6)
+
+        self.btn_save_profile = QPushButton("💾 Сохранить")
+        self.btn_save_profile.setToolTip("Сохранить текущие параметры в активный профиль")
+        self.btn_save_profile.clicked.connect(self.on_save_current_profile)
+        profile_btns.addWidget(self.btn_save_profile)
+
+        self.btn_new_profile = QPushButton("➕ Новый...")
+        self.btn_new_profile.setToolTip("Создать новый профиль на основе текущих настроек")
+        self.btn_new_profile.clicked.connect(self.on_create_new_profile)
+        profile_btns.addWidget(self.btn_new_profile)
+
+        self.btn_menu_profile = QPushButton("⚙ ▾")
+        self.btn_menu_profile.setToolTip("Дополнительные действия: переименовать, удалить, экспорт, импорт")
+        self.btn_menu_profile.clicked.connect(self.show_profile_menu)
+        profile_btns.addWidget(self.btn_menu_profile)
+
+        profile_layout.addLayout(profile_btns)
+        right_layout.addWidget(group_profile)
+
         group_printer = QGroupBox("Настройки печати")
         form_layout = QFormLayout(group_printer)
         form_layout.setSpacing(14)
@@ -767,6 +803,10 @@ class PrintManagerUI(QMainWindow):
                 self.combo_template.setEditText(saved_template)
         self.update_template_preview()
 
+        # Восстановление профилей проектов
+        if hasattr(self, "combo_profile"):
+            self.update_profile_combo()
+
         # Восстановление скрытых колонок
         hidden_cols = cfg.get("hidden_columns", [])
         if isinstance(hidden_cols, list):
@@ -850,6 +890,261 @@ class PrintManagerUI(QMainWindow):
             suffix = " (для отд. файлов)" if is_merged else ""
             self.lbl_template_preview.setText(f"Пример: {preview}{suffix}")
 
+    def update_profile_combo(self):
+        """Обновляет список профилей в выпадающем списке и выбирает активный."""
+        if not hasattr(self, "combo_profile") or not hasattr(self, "profile_manager"):
+            return
+        self.combo_profile.blockSignals(True)
+        self.combo_profile.clear()
+        names = self.profile_manager.get_profile_names()
+        for name in names:
+            self.combo_profile.addItem(name)
+        active = self.profile_manager.get_active_profile_name()
+        idx = self.combo_profile.findText(active)
+        if idx >= 0:
+            self.combo_profile.setCurrentIndex(idx)
+        self.combo_profile.blockSignals(False)
+
+    def on_profile_selected(self, profile_name: str):
+        """Обработчик выбора профиля из списка."""
+        if getattr(self, "_is_loading_config", False) or not profile_name:
+            return
+        settings = self.profile_manager.get_profile(profile_name)
+        if settings:
+            self.apply_profile_settings(settings)
+            self.profile_manager.set_active_profile_name(profile_name)
+            self.lbl_status_right.setText(f"Загружен профиль «{profile_name}»")
+
+    def apply_profile_settings(self, settings: Dict[str, Any]):
+        """Применяет словарь настроек профиля к элементам интерфейса."""
+        if not settings or not isinstance(settings, dict):
+            return
+        self._is_loading_config = True
+        try:
+            # 1. Принтер
+            printer = settings.get("printer", "")
+            if printer and hasattr(self, "combo_printers"):
+                idx = self.combo_printers.findText(printer)
+                if idx >= 0:
+                    self.combo_printers.setCurrentIndex(idx)
+            # 2. Стиль
+            style = settings.get("plot_style", "")
+            if style and hasattr(self, "combo_style"):
+                idx = self.combo_style.findText(style)
+                if idx >= 0:
+                    self.combo_style.setCurrentIndex(idx)
+            # 3. Бумага
+            paper = settings.get("fallback_paper", "")
+            if paper and hasattr(self, "combo_papers"):
+                idx = self.combo_papers.findText(paper)
+                if idx >= 0:
+                    self.combo_papers.setCurrentIndex(idx)
+            # 4. Режим
+            mode = settings.get("merge_mode", "")
+            if mode and hasattr(self, "combo_mode"):
+                idx = self.combo_mode.findText(mode)
+                if idx >= 0:
+                    self.combo_mode.setCurrentIndex(idx)
+            # 5. Шаблон
+            template = settings.get("filename_template", "")
+            if template and hasattr(self, "combo_template"):
+                idx = self.combo_template.findText(template)
+                if idx >= 0:
+                    self.combo_template.setCurrentIndex(idx)
+                else:
+                    self.combo_template.setEditText(template)
+            # 6. Чекбоксы
+            if "open_after_print" in settings and hasattr(self, "chk_open_after"):
+                self.chk_open_after.setChecked(bool(settings["open_after_print"]))
+            if "sync_autocad" in settings and hasattr(self, "chk_sync_acad"):
+                self.chk_sync_acad.setChecked(bool(settings["sync_autocad"]))
+            # 7. Пространство
+            source = settings.get("source_mode", "")
+            if source and hasattr(self, "combo_source"):
+                idx = self.combo_source.findText(source)
+                if idx >= 0:
+                    self.combo_source.setCurrentIndex(idx)
+            # 8. Тип рамок
+            frame_type = settings.get("frame_type", "")
+            if frame_type and hasattr(self, "combo_frame_type"):
+                idx = self.combo_frame_type.findData(frame_type)
+                if idx >= 0:
+                    self.combo_frame_type.setCurrentIndex(idx)
+                    self.on_frame_type_changed(idx)
+            # 9. Имя блока
+            custom_block = settings.get("custom_block_name", "")
+            if hasattr(self, "edit_block_name"):
+                self.edit_block_name.setText(custom_block or "")
+        finally:
+            self._is_loading_config = False
+
+        self.update_template_preview()
+        self.save_settings()
+
+    def get_current_profile_settings(self) -> Dict[str, Any]:
+        """Собирает текущие параметры печати из интерфейса для сохранения в профиль."""
+        return {
+            "printer": self.combo_printers.currentText() if hasattr(self, "combo_printers") else "DWG To PDF.pc3",
+            "plot_style": self.combo_style.currentText() if hasattr(self, "combo_style") else "monochrome.ctb",
+            "fallback_paper": self.combo_papers.currentText() if hasattr(self, "combo_papers") else "",
+            "fallback_paper_canonical": self.paper_dict.get(self.combo_papers.currentText(), "") if hasattr(self, "combo_papers") else "",
+            "merge_mode": self.combo_mode.currentText() if hasattr(self, "combo_mode") else "В один файл (PDF)",
+            "filename_template": self.combo_template.currentText().strip() if hasattr(self, "combo_template") else "Лист {Номер} - {Наименование}",
+            "open_after_print": self.chk_open_after.isChecked() if hasattr(self, "chk_open_after") else True,
+            "sync_autocad": self.chk_sync_acad.isChecked() if hasattr(self, "chk_sync_acad") else True,
+            "source_mode": self.combo_source.currentText() if hasattr(self, "combo_source") else "Модель (Model Space)",
+            "frame_type": self.combo_frame_type.currentData() if hasattr(self, "combo_frame_type") else "spds",
+            "custom_block_name": self.edit_block_name.text() if hasattr(self, "edit_block_name") else "",
+        }
+
+    def on_save_current_profile(self):
+        """Сохраняет текущие параметры интерфейса в активный профиль."""
+        curr_name = self.combo_profile.currentText().strip() if hasattr(self, "combo_profile") else ""
+        if not curr_name:
+            return
+        current_settings = self.get_current_profile_settings()
+        self.profile_manager.save_profile(curr_name, current_settings)
+        self.lbl_status_right.setText(f"Настройки сохранены в профиль «{curr_name}»")
+        QMessageBox.information(
+            self,
+            "Профиль сохранён",
+            f"Текущие параметры успешно сохранены в профиль «{curr_name}»."
+        )
+
+    def on_create_new_profile(self):
+        """Создает новый именованный профиль на основе текущих настроек."""
+        name, ok = QInputDialog.getText(
+            self,
+            "Новый профиль",
+            "Введите имя нового профиля проекта:"
+        )
+        if not ok or not name or not name.strip():
+            return
+        name = name.strip()
+        current_settings = self.get_current_profile_settings()
+        created, err = self.profile_manager.create_profile(name, current_settings)
+        if created:
+            self.update_profile_combo()
+            self.combo_profile.setCurrentText(name)
+            self.lbl_status_right.setText(f"Создан профиль «{name}»")
+        else:
+            QMessageBox.warning(self, "Ошибка создания профиля", err)
+
+    def show_profile_menu(self):
+        """Открывает контекстное меню управления профилями (переименование, удаление, экспорт, импорт)."""
+        curr_name = self.combo_profile.currentText().strip() if hasattr(self, "combo_profile") else ""
+        menu = QMenu(self)
+
+        act_rename = menu.addAction("✏️ Переименовать...")
+        act_delete = menu.addAction("🗑️ Удалить")
+
+        is_builtin = self.profile_manager.is_builtin(curr_name)
+        if is_builtin:
+            act_rename.setEnabled(False)
+            act_rename.setToolTip("Встроенный базовый профиль нельзя переименовать")
+            act_delete.setEnabled(False)
+            act_delete.setToolTip("Встроенный базовый профиль нельзя удалить")
+
+        menu.addSeparator()
+        act_export = menu.addAction("📤 Экспорт профиля в файл...")
+        act_import = menu.addAction("📥 Импорт профиля из файла...")
+
+        action = menu.exec(self.btn_menu_profile.mapToGlobal(self.btn_menu_profile.rect().bottomLeft()))
+        if action == act_rename:
+            self.on_rename_profile()
+        elif action == act_delete:
+            self.on_delete_profile()
+        elif action == act_export:
+            self.on_export_profile()
+        elif action == act_import:
+            self.on_import_profile()
+
+    def on_rename_profile(self):
+        """Переименовывает текущий пользовательский профиль."""
+        curr_name = self.combo_profile.currentText().strip() if hasattr(self, "combo_profile") else ""
+        if self.profile_manager.is_builtin(curr_name):
+            QMessageBox.information(self, "Профиль", "Встроенный базовый профиль нельзя переименовать.")
+            return
+        new_name, ok = QInputDialog.getText(
+            self,
+            "Переименование профиля",
+            "Новое имя профиля:",
+            text=curr_name
+        )
+        if not ok or not new_name or not new_name.strip():
+            return
+        new_name = new_name.strip()
+        renamed, err = self.profile_manager.rename_profile(curr_name, new_name)
+        if renamed:
+            self.update_profile_combo()
+            self.combo_profile.setCurrentText(new_name)
+            self.lbl_status_right.setText(f"Профиль переименован в «{new_name}»")
+        else:
+            QMessageBox.warning(self, "Ошибка переименования", err)
+
+    def on_delete_profile(self):
+        """Удаляет текущий пользовательский профиль."""
+        curr_name = self.combo_profile.currentText().strip() if hasattr(self, "combo_profile") else ""
+        if self.profile_manager.is_builtin(curr_name):
+            QMessageBox.information(self, "Профиль", "Встроенный базовый профиль нельзя удалить.")
+            return
+        reply = QMessageBox.question(
+            self,
+            "Удаление профиля",
+            f"Вы уверены, что хотите удалить профиль «{curr_name}»?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            deleted, err = self.profile_manager.delete_profile(curr_name)
+            if deleted:
+                self.update_profile_combo()
+                self.lbl_status_right.setText(f"Профиль «{curr_name}» удалён")
+            else:
+                QMessageBox.warning(self, "Ошибка удаления", err)
+
+    def on_export_profile(self):
+        """Экспортирует настройки выбранного профиля в JSON-файл."""
+        curr_name = self.combo_profile.currentText().strip() if hasattr(self, "combo_profile") else ""
+        safe_name = "".join(c for c in curr_name if c.isalnum() or c in " -_").strip() or "профиль"
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Экспорт профиля",
+            f"Профиль_{safe_name}.json",
+            "JSON Files (*.json)"
+        )
+        if filepath:
+            exported, err = self.profile_manager.export_profile(curr_name, filepath)
+            if exported:
+                QMessageBox.information(
+                    self,
+                    "Экспорт завершён",
+                    f"Профиль «{curr_name}» успешно экспортирован в:\n{filepath}"
+                )
+            else:
+                QMessageBox.warning(self, "Ошибка экспорта", err)
+
+    def on_import_profile(self):
+        """Импортирует профиль из JSON-файла."""
+        filepath, _ = QFileDialog.getOpenFileName(
+            self,
+            "Импорт профиля",
+            "",
+            "JSON Files (*.json);;All Files (*.*)"
+        )
+        if filepath:
+            imported, err, new_name = self.profile_manager.import_profile(filepath)
+            if imported and new_name:
+                self.update_profile_combo()
+                self.combo_profile.setCurrentText(new_name)
+                QMessageBox.information(
+                    self,
+                    "Импорт завершён",
+                    f"Профиль «{new_name}» успешно импортирован и активирован."
+                )
+            else:
+                QMessageBox.warning(self, "Ошибка импорта", err)
+
     def save_settings(self):
         """Сохраняет текущие параметры печати и состояния чекбоксов в config.json."""
         if getattr(self, "_is_loading_config", False):
@@ -861,6 +1156,7 @@ class PrintManagerUI(QMainWindow):
         mode_text = self.combo_mode.currentText()
         source_text = self.combo_source.currentText()
         template_text = self.combo_template.currentText().strip() if hasattr(self, "combo_template") else ""
+        active_prof = self.combo_profile.currentText().strip() if hasattr(self, "combo_profile") else ""
         theme_val = self.combo_theme.currentData() if hasattr(self, "combo_theme") else getattr(self, "current_theme", "dark_catppuccin")
         frame_type_val = self.combo_frame_type.currentData() if hasattr(self, "combo_frame_type") else "spds"
         custom_block_val = self.edit_block_name.text() if hasattr(self, "edit_block_name") else ""
@@ -877,6 +1173,7 @@ class PrintManagerUI(QMainWindow):
                                          else current_cfg.get("fallback_paper_canonical", "")),
             "merge_mode": mode_text if mode_text else current_cfg.get("merge_mode", "В один файл (PDF)"),
             "filename_template": template_text if template_text else current_cfg.get("filename_template", "Лист {Номер} - {Наименование}"),
+            "active_profile": active_prof if active_prof else current_cfg.get("active_profile", "По умолчанию"),
             "open_after_print": self.chk_open_after.isChecked(),
             "sync_autocad": self.chk_sync_acad.isChecked(),
             "source_mode": source_text if source_text else current_cfg.get("source_mode", "Модель (Model Space)"),
