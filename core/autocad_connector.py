@@ -263,8 +263,7 @@ class AutoCADConnector:
                     time.sleep(0.1)
                     continue
             except Exception:
-                time.sleep(0.1)
-                continue
+                pass
             d = self.find_open_document(abs_path)
             if d is not None and self._doc_usable(d):
                 return d

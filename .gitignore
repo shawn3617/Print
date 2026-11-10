@@ -27,4 +27,5 @@ plot.log
 
 # ===== Результаты работы программы и отладка =====
 *.pdf
+!tests/samples/pdf/*.pdf
 spds_export_result.json
