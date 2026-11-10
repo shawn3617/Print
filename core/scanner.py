@@ -108,10 +108,16 @@ class DocumentScanner:
                             fw, fh = ALL_FORMATS.get(f.paper_format, (594, 420))
                             w = max(abs(f.max_point[0] - f.min_point[0]), abs(f.max_point[1] - f.min_point[1]))
                             h = min(abs(f.max_point[0] - f.min_point[0]), abs(f.max_point[1] - f.min_point[1]))
-                            if round(w / fw) != common_scale:
+                            curr_sc = round(w / fw) if fw > 0 else 1
+                            if curr_sc != common_scale:
                                 corrected_fmt = detect_paper_format(w, h, scale=common_scale)
                                 if corrected_fmt in ALL_FORMATS:
-                                    f.paper_format = corrected_fmt
+                                    cfw, cfh = ALL_FORMATS[corrected_fmt]
+                                    err_curr = abs(w - fw * curr_sc) + abs(h - fh * curr_sc)
+                                    err_corr = abs(w - cfw * common_scale) + abs(h - cfh * common_scale)
+                                    # Меняем только если формат при доминирующем масштабе садится не хуже текущего
+                                    if err_corr <= err_curr + 1.0:
+                                        f.paper_format = corrected_fmt
             except Exception as e:
                 print(f"Ошибка при согласовании масштабов: {e}")
 

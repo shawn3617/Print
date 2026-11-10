@@ -43,7 +43,8 @@ GOST_EXTENDED = {
 for _base_name, (_fw, _fh) in GOST_FORMATS.items():
     _short = min(_fw, _fh)
     _long = max(_fw, _fh)
-    for _mult in range(2, 10):
+    _min_mult = 2 if _base_name == "A0" else 3
+    for _mult in range(_min_mult, 10):
         _ext_name = f"{_base_name}x{_mult}"
         if _ext_name not in GOST_EXTENDED and not (_base_name == "A0" and _mult == 1):
             _ext_w = _short * _mult
