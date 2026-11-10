@@ -6,6 +6,7 @@ from typing import List, Any
 from core.models import Frame, ALL_FORMATS, detect_paper_format
 from parsers.base_parser import BaseParser
 from core.resource_utils import get_resource_path, get_lisp_path
+from core.logger import log_warn, log_error, log_info
 
 
 DEFAULT_BLOCK_NAMES = [
@@ -648,6 +649,7 @@ class BlockParser(BaseParser):
                         self._enrich_single_frame(f, texts)
             except Exception as e:
                 print(f"[BlockParser] Ошибка сбора свободных текстов для {lyt_name}: {e}")
+                log_warn(f"Ошибка сбора свободных текстов для {lyt_name}", exc=e, module="BlockParser")
 
         return frames
 
@@ -661,6 +663,7 @@ class BlockParser(BaseParser):
             frames = self._find_frames_via_lisp(doc)
         except Exception as e:
             print(f"Предупреждение: LISP поиск блоков не сработал ({e}), запуск резервного метода...")
+            log_warn(f"LISP поиск блоков не сработал ({e}), запуск резервного метода", exc=e, module="BlockParser")
             frames = self._find_frames_fallback_com(doc)
 
         # 3. Геометрическое дообогащение текстами россыпью для блоков без атрибутов

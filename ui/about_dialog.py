@@ -29,7 +29,7 @@ class AboutDialog(QDialog):
         self.connector = connector
 
         self.setWindowTitle(f"О программе — {APP_SUBTITLE}")
-        self.setFixedSize(540, 530)
+        self.setFixedSize(540, 545)
         self.setModal(True)
 
         icon_path = get_resource_path("autocad_to_pdf_icon.ico")
@@ -126,6 +126,13 @@ class AboutDialog(QDialog):
         lbl_diag_title.setStyleSheet(f"font-weight: bold; font-size: 12px; color: {accent};")
         diag_hdr.addWidget(lbl_diag_title)
         diag_hdr.addStretch()
+
+        self.btn_open_diag = QPushButton("🐞 Журнал...")
+        self.btn_open_diag.setProperty("cssClass", "btn_tool")
+        self.btn_open_diag.setToolTip("Открыть журнал работы и диагностики (F2)")
+        self.btn_open_diag.setStyleSheet("padding: 2px 8px; font-size: 11px;")
+        self.btn_open_diag.clicked.connect(self.open_diagnostics)
+        diag_hdr.addWidget(self.btn_open_diag)
 
         self.btn_copy_info = QPushButton("📋 Скопировать")
         self.btn_copy_info.setProperty("cssClass", "btn_tool")
@@ -259,6 +266,14 @@ class AboutDialog(QDialog):
             lines.append("AutoCAD: нет коннектора")
 
         return "\n".join(lines)
+
+    def open_diagnostics(self):
+        from ui.diagnostics_dialog import DiagnosticsDialog
+        dlg = DiagnosticsDialog(
+            current_theme_id=getattr(self, "current_theme_id", "dark_catppuccin"),
+            parent=self
+        )
+        dlg.exec()
 
     def copy_diagnostics(self):
         clipboard = QApplication.clipboard()

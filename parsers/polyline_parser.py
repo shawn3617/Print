@@ -5,6 +5,7 @@ import pythoncom
 import win32com.client
 
 from core.models import Frame, detect_paper_format, ALL_FORMATS, natural_sheet_sort_key
+from core.logger import log_warn, log_error
 from parsers.base_parser import BaseParser
 
 
@@ -425,6 +426,7 @@ class PolylineParser(BaseParser):
             return objs
         except Exception as e:
             print(f"[PolylineParser] Набор выбора не сработал ({e}), перебор ModelSpace...")
+            log_warn(f"Набор выбора не сработал ({e}), перебор ModelSpace", exc=e, module="PolylineParser")
             return None
 
     def find_frames(self, doc: Any) -> List[Frame]:
@@ -496,5 +498,6 @@ class PolylineParser(BaseParser):
                 frames.append(frame)
             except Exception as e:
                 print(f"Ошибка при обработке полилинии: {e}")
+                log_error("Ошибка при обработке полилинии", exc=e, module="PolylineParser")
 
         return frames

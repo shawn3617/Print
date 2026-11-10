@@ -1,5 +1,6 @@
 from typing import List
 from core.models import Frame, natural_sheet_sort_key, frame_natural_sort_key
+from core.logger import log_info, log_warn, log_error
 from parsers.block_parser import BlockParser
 
 from parsers.spds_parser import SPDSParser
@@ -59,11 +60,14 @@ class DocumentScanner:
                 t_p0 = time.perf_counter()
                 frames = parser.find_frames(doc)
                 dt_p = time.perf_counter() - t_p0
-                print(f"[{parser.__class__.__name__}] завершен за {dt_p:.3f} сек (найдено {len(frames)} рамок)")
+                msg = f"[{parser.__class__.__name__}] завершен за {dt_p:.3f} сек (найдено {len(frames)} рамок)"
+                print(msg)
+                log_info(msg, module="Scanner")
                 if frames:
                     all_frames.extend(frames)
             except Exception as e:
                 print(f"Ошибка при работе парсера {parser.__class__.__name__}: {e}")
+                log_error(f"Ошибка при работе парсера {parser.__class__.__name__}", exc=e, module="Scanner")
 
         # Фильтрация по пространству (Модель / Листы)
         if space == "model":
@@ -120,6 +124,7 @@ class DocumentScanner:
                                         f.paper_format = corrected_fmt
             except Exception as e:
                 print(f"Ошибка при согласовании масштабов: {e}")
+                log_warn("Ошибка при согласовании масштабов", exc=e, module="Scanner")
 
         # Заполняем информацию о чертеже (dwg_path, dwg_name)
         doc_path = ""
@@ -174,6 +179,7 @@ class DocumentScanner:
                 layouts_info.append((tab_order, layout.Name, layout))
         except Exception as e:
             print(f"Ошибка при получении списка Layouts: {e}")
+            log_error("Ошибка при получении списка Layouts", exc=e, module="Scanner")
 
         layouts_info.sort(key=lambda x: x[0])
 
@@ -192,6 +198,7 @@ class DocumentScanner:
                                 frames_by_layout.setdefault(lyt_n.lower(), []).append(f)
                 except Exception as e:
                     print(f"Предупреждение: ошибка поиска рамок на листах в {parser.__class__.__name__}: {e}")
+                    log_warn(f"Ошибка поиска рамок на листах в {parser.__class__.__name__}", exc=e, module="Scanner")
 
         # Дедупликация рамок на каждом листе (если SPDS и Block зацепили один объект)
         for lyt_k in frames_by_layout:
@@ -344,6 +351,7 @@ class DocumentScanner:
                 
             except Exception as e:
                 print(f"Ошибка при обработке файла '{abs_path}': {e}")
+                log_error(f"Ошибка при обработке файла '{abs_path}'", exc=e, module="Scanner")
             finally:
                 # Закрываем чертеж только если мы его сами открыли и его изначально не было в AutoCAD
                 if doc and was_opened and abs_path.lower() not in initially_open_files:

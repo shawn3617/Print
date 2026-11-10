@@ -20,12 +20,14 @@ from core.autocad_connector import AutoCADConnector
 from core.scanner import DocumentScanner
 from core.printer import BatchPrinter, PrintCancelledError
 from core.config_manager import ConfigManager
-from core.models import natural_sheet_sort_key, frame_natural_sort_key
+from core.models import natural_sheet_sort_key, frame_natural_sort_key, ALL_FORMATS
 from core.exporter import SheetExporter
 from core.resource_utils import get_resource_path
+from core.logger import init_logging, log_info, log_warn, log_error
 from ui.themes import THEMES, build_theme_qss, get_theme_status_colors, apply_title_bar_theme
 from ui.help_dialog import HelpDialog
 from ui.about_dialog import AboutDialog, APP_VERSION
+from ui.diagnostics_dialog import DiagnosticsDialog
 
 
 class ReorderableTableWidget(QTableWidget):
@@ -186,6 +188,8 @@ class PrintProgressDialog(QDialog):
 class PrintManagerUI(QMainWindow):
     def __init__(self, config_manager=None):
         super().__init__()
+        init_logging()
+        log_info(f"Запуск PrintPDF v{APP_VERSION}", module="App")
         self.setWindowTitle(f"PrintPDF v{APP_VERSION} — AutoCAD Batch PDF Plotter")
         icon_path = get_resource_path("autocad_to_pdf_icon.ico")
         if os.path.exists(icon_path):
@@ -293,6 +297,12 @@ class PrintManagerUI(QMainWindow):
         self.btn_help.setToolTip("Открыть иллюстрированное руководство пользователя и частые вопросы (F1)")
         self.btn_help.clicked.connect(self.show_help_dialog)
         batch_bar.addWidget(self.btn_help)
+
+        self.btn_diagnostics = QPushButton("🐞 Диагностика (F2)")
+        self.btn_diagnostics.setProperty("cssClass", "btn_tool")
+        self.btn_diagnostics.setToolTip("Журнал ошибок, диагностика подключения и системная информация (F2)")
+        self.btn_diagnostics.clicked.connect(self.show_diagnostics_dialog)
+        batch_bar.addWidget(self.btn_diagnostics)
 
         self.btn_about = QPushButton("ℹ️ О программе")
         self.btn_about.setProperty("cssClass", "btn_tool")
@@ -410,7 +420,7 @@ class PrintManagerUI(QMainWindow):
 
         status_bar_layout.addStretch()
 
-        self.lbl_status_right = QLabel("Добавьте чертежи .dwg или нажмите «Найти рамки»")
+        self.lbl_status_right = QLabel("F1 — Инструкция | F2 — Диагностика")
         self.lbl_status_right.setObjectName("status_bar_right")
         status_bar_layout.addWidget(self.lbl_status_right)
 
@@ -584,9 +594,31 @@ class PrintManagerUI(QMainWindow):
         self.shortcut_f1 = QShortcut(QKeySequence("F1"), self)
         self.shortcut_f1.activated.connect(self.show_help_dialog)
 
+        # Горячая клавиша F2 для вызова журнала диагностики
+        self.shortcut_f2 = QShortcut(QKeySequence("F2"), self)
+        self.shortcut_f2.activated.connect(self.show_diagnostics_dialog)
+
     def show_help_dialog(self):
         """Открывает окно руководства пользователя."""
         dlg = HelpDialog(current_theme_id=getattr(self, "current_theme", "dark_catppuccin"), parent=self)
+        dlg.exec()
+
+    def show_diagnostics_dialog(self):
+        """Открывает окно журнала диагностики и ошибок."""
+        extra = {}
+        if getattr(self, "connector", None):
+            extra["AutoCAD подключен"] = "Да" if getattr(self.connector, "app", None) else "Нет"
+            extra["Активный чертеж"] = self.connector.get_active_document_name()
+        extra["Выбранный плоттер"] = self.combo_printers.currentText() if hasattr(self, "combo_printers") else "—"
+        extra["Резервный формат"] = self.combo_papers.currentText() if hasattr(self, "combo_papers") else "—"
+        extra["Стиль печати"] = self.combo_style.currentText() if hasattr(self, "combo_style") else "—"
+        extra["Загружено рамок"] = str(len(getattr(self, "frames", [])))
+
+        dlg = DiagnosticsDialog(
+            current_theme_id=getattr(self, "current_theme", "dark_catppuccin"),
+            extra_diagnostics_info=extra,
+            parent=self
+        )
         dlg.exec()
 
     def show_about_dialog(self):
@@ -942,7 +974,8 @@ class PrintManagerUI(QMainWindow):
                         dwg_name=frame.dwg_name,
                         doc_code=frame.doc_code,
                         object_name=frame.object_name,
-                        building_name=frame.building_name
+                        building_name=frame.building_name,
+                        fallback_warning=getattr(frame, "fallback_warning", "")
                     )
             finally:
                 self._is_updating_table = False
@@ -962,7 +995,8 @@ class PrintManagerUI(QMainWindow):
 
         except Exception as e:
             progress_dlg.close()
-            QMessageBox.critical(self, "Ошибка", f"Ошибка при пакетном сканировании: {e}")
+            log_error("Ошибка при пакетном сканировании", exc=e, module="Scanner")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при пакетном сканировании: {e}\n\nЖурнал ошибок доступен по клавише F2 («Диагностика»).")
         finally:
             progress_dlg.close()
 
@@ -1173,7 +1207,8 @@ class PrintManagerUI(QMainWindow):
                         dwg_name=frame.dwg_name,
                         doc_code=frame.doc_code,
                         object_name=frame.object_name,
-                        building_name=frame.building_name
+                        building_name=frame.building_name,
+                        fallback_warning=getattr(frame, "fallback_warning", "")
                     )
             finally:
                 self._is_updating_table = False
@@ -1186,7 +1221,8 @@ class PrintManagerUI(QMainWindow):
                 QMessageBox.information(self, "Результат", msg)
                 
         except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Ошибка при сканировании: {e}")
+            log_error("Ошибка при сканировании чертежа", exc=e, module="Scanner")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при сканировании: {e}\n\nЖурнал ошибок доступен по клавише F2 («Диагностика»).")
 
     def add_table_row(
         self,
@@ -1198,7 +1234,8 @@ class PrintManagerUI(QMainWindow):
         dwg_name: str = "",
         doc_code: str = "",
         object_name: str = "",
-        building_name: str = ""
+        building_name: str = "",
+        fallback_warning: str = ""
     ):
         row = self.table.rowCount()
         self.table.insertRow(row)
@@ -1235,7 +1272,16 @@ class PrintManagerUI(QMainWindow):
         item_bld.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         item_bld.setToolTip(building_name)
 
-        item_fmt = QTableWidgetItem(paper_format)
+        fmt_display = paper_format or "Не определен"
+        if fallback_warning:
+            item_fmt = QTableWidgetItem(f"⚠️ {fmt_display}")
+            item_fmt.setToolTip(f"⚠️ {fallback_warning}")
+        elif fmt_display not in ALL_FORMATS:
+            item_fmt = QTableWidgetItem(f"⚠️ {fmt_display}")
+            item_fmt.setToolTip(f"⚠️ Нестандартный формат «{fmt_display}». При печати будет применен резервный формат.")
+        else:
+            item_fmt = QTableWidgetItem(fmt_display)
+            item_fmt.setToolTip(fmt_display)
         item_fmt.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
         item_dwg = QTableWidgetItem(dwg_name)
@@ -1257,6 +1303,27 @@ class PrintManagerUI(QMainWindow):
         self.table.setItem(row, 6, item_fmt)
         self.table.setItem(row, 7, item_dwg)
         self.table.setItem(row, 8, item_src)
+
+        if not getattr(self, "_is_updating_table", False):
+            self.update_print_counter()
+
+    def _refresh_table_formats(self):
+        """Обновляет колонку форматов с индикацией предупреждений о резервном формате."""
+        for row in range(self.table.rowCount()):
+            if row < len(self.frames):
+                frame = self.frames[row]
+                fmt_display = frame.paper_format or "Не определен"
+                warn = getattr(frame, "fallback_warning", "")
+                if not warn and fmt_display not in ALL_FORMATS:
+                    warn = f"Нестандартный формат «{fmt_display}». При печати будет применен резервный формат."
+                item = self.table.item(row, 6)
+                if item:
+                    if warn:
+                        item.setText(f"⚠️ {fmt_display}")
+                        item.setToolTip(f"⚠️ {warn}")
+                    else:
+                        item.setText(fmt_display)
+                        item.setToolTip(fmt_display)
         
         if not getattr(self, "_is_updating_table", False):
             self.update_print_counter()
@@ -1450,7 +1517,7 @@ class PrintManagerUI(QMainWindow):
 
         if total_sheets == 0:
             self.lbl_status_left.setText("<span>Листов в очереди: <b>0</b></span>")
-            self.lbl_status_right.setText("Добавьте чертежи .dwg или нажмите «Найти рамки»")
+            self.lbl_status_right.setText("Добавьте чертежи .dwg или нажмите «Найти рамки» | F2 — Диагностика")
             return
 
         def format_sort_key(fmt: str):
@@ -1486,9 +1553,9 @@ class PrintManagerUI(QMainWindow):
         if self.is_filter_active():
             self.lbl_status_right.setText("Фильтр активен")
         elif count == 0:
-            self.lbl_status_right.setText("Отметьте листы галочками | F1 — Инструкция")
+            self.lbl_status_right.setText("Отметьте листы галочками | F1 — Инструкция | F2 — Диагностика")
         else:
-            self.lbl_status_right.setText("Двойной клик — в AutoCAD | F1 — Инструкция")
+            self.lbl_status_right.setText("Двойной клик — в AutoCAD | F1 — Инструкция | F2 — Диагностика")
 
     def is_row_checked(self, row: int) -> bool:
         chk_widget = self.table.cellWidget(row, 0)
@@ -1605,7 +1672,8 @@ class PrintManagerUI(QMainWindow):
                     dwg_name=f.dwg_name,
                     doc_code=f.doc_code,
                     object_name=f.object_name,
-                    building_name=f.building_name
+                    building_name=f.building_name,
+                    fallback_warning=getattr(f, "fallback_warning", "")
                 )
         finally:
             self._is_updating_table = False
@@ -1859,7 +1927,8 @@ class PrintManagerUI(QMainWindow):
                     dwg_name=frame.dwg_name,
                     doc_code=frame.doc_code,
                     object_name=frame.object_name,
-                    building_name=frame.building_name
+                    building_name=frame.building_name,
+                    fallback_warning=getattr(frame, "fallback_warning", "")
                 )
         finally:
             self._is_updating_table = False
@@ -2010,17 +2079,35 @@ class PrintManagerUI(QMainWindow):
                 try:
                     os.startfile(output_path)
                 except Exception as e:
-                    print(f"Не удалось открыть файл: {e}")
+                    log_warn(f"Не удалось открыть файл '{output_path}'", exc=e, module="Printing")
 
-            QMessageBox.information(self, "Успех", f"Успешно напечатано {len(selected_frames)} листов в:\n{output_path}")
+            fallback_sheets = [f for f in selected_frames if getattr(f, "fallback_warning", "")]
+            if fallback_sheets:
+                self._refresh_table_formats()
+                msg = (
+                    f"Успешно напечатано {len(selected_frames)} листов в:\n{output_path}\n\n"
+                    f"⚠️ Обратите внимание: для {len(fallback_sheets)} листов применён резервный формат!\n"
+                    f"Строки в таблице отмечены значком ⚠️.\n"
+                    f"Подробный журнал доступен по клавише F2 («Диагностика»)."
+                )
+                QMessageBox.warning(self, "Печать завершена с предупреждениями", msg)
+            else:
+                QMessageBox.information(self, "Успех", f"Успешно напечатано {len(selected_frames)} листов в:\n{output_path}")
         except PrintCancelledError:
             progress_dlg.close()
+            log_info("Пакетная печать отменена пользователем", module="Printing")
             QMessageBox.information(self, "Печать отменена", "Пакетная печать была отменена пользователем.")
         except Exception as e:
             import traceback
             traceback.print_exc()
+            log_error("Ошибка при пакетной печати", exc=e, module="Printing")
             progress_dlg.close()
-            QMessageBox.critical(self, "Ошибка печати", f"Произошла ошибка при печати:\n{e}")
+            QMessageBox.critical(
+                self,
+                "Ошибка печати",
+                f"Произошла ошибка при печати:\n{e}\n\n"
+                f"Подробный журнал ошибок доступен по клавише F2 («Диагностика»)."
+            )
         finally:
             progress_dlg.close()
             self.update_print_counter()

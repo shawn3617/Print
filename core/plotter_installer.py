@@ -21,6 +21,7 @@ import struct
 import re
 
 from core.resource_utils import get_resource_path
+from core.logger import log_info, log_warn, log_error
 
 
 def _split_paths(value) -> list:
@@ -135,9 +136,11 @@ def _fix_pc3_pmp_reference(pc3_path: str, pmp_dir: str) -> bool:
                 with open(pc3_path, "w", encoding="utf-8") as f:
                     f.write(txt_new)
                 print(f"[Плоттеры] Исправлен путь к PMP в {os.path.basename(pc3_path)}: {new_pmp}")
+                log_info(f"Исправлен путь к PMP в {os.path.basename(pc3_path)}: {new_pmp}", module="Plotters")
                 return True
     except Exception as e:
         print(f"Предупреждение: не удалось проверить/исправить PMP путь в {pc3_path}: {e}")
+        log_warn(f"Не удалось проверить/исправить PMP путь в {pc3_path}", exc=e, module="Plotters")
     return False
 
 
@@ -154,6 +157,7 @@ def install_bundled_plotters(app=None) -> list:
         year = _acad_year(app)
         if not year:
             print("[Плоттеры] Не удалось определить версию AutoCAD — установка пропущена")
+            log_info("Не удалось определить версию AutoCAD — установка пропущена", module="Plotters")
             return installed
         src_dir = os.path.join(get_resource_path("plotters"), year)
         if not os.path.isdir(src_dir):
@@ -173,6 +177,7 @@ def install_bundled_plotters(app=None) -> list:
                         installed.append(os.path.join(pmp_dir, os.path.basename(f)))
                 except Exception as e:
                     print(f"Предупреждение: не удалось установить {os.path.basename(f)} в {pmp_dir}: {e}")
+                    log_warn(f"Не удалось установить {os.path.basename(f)} в {pmp_dir}", exc=e, module="Plotters")
 
             for f in pc3_files:
                 try:
@@ -180,6 +185,7 @@ def install_bundled_plotters(app=None) -> list:
                         installed.append(os.path.join(pc3_dir, os.path.basename(f)))
                 except Exception as e:
                     print(f"Предупреждение: не удалось установить {os.path.basename(f)} в {pc3_dir}: {e}")
+                    log_warn(f"Не удалось установить {os.path.basename(f)} в {pc3_dir}", exc=e, module="Plotters")
 
             # Проверяем и правим пути к PMP для всех PC3 (включая скопированные и DWG To PDF)
             for f in os.listdir(pc3_dir):
@@ -188,6 +194,8 @@ def install_bundled_plotters(app=None) -> list:
 
         for path in installed:
             print(f"[Плоттеры] Установлен/обновлён: {path}")
+            log_info(f"Установлен/обновлён плоттер: {path}", module="Plotters")
     except Exception as e:
         print(f"Предупреждение: установка плоттеров не удалась: {e}")
+        log_warn("Установка плоттеров не удалась", exc=e, module="Plotters")
     return installed

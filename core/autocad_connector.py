@@ -2,6 +2,7 @@ import os
 import time
 import win32com.client
 import pythoncom
+from core.logger import log_info, log_warn, log_error
 
 # HRESULT-ы «AutoCAD занят / вызов отклонён» — только их имеет смысл повторять.
 RPC_E_CALL_REJECTED = -2147418111          # 0x80010001 «Вызов был отклонён»
@@ -48,7 +49,9 @@ def _retry_busy(func, max_attempts: int = 20, delay: float = 0.25):
             if not _is_busy_com_error(e):
                 # Печатаем код — если это всё же «занятость», которой нет в списке, её легко добавить
                 hr = e.args[0] if getattr(e, "args", None) else "?"
-                print(f"[AutoCAD] COM-ошибка без повтора (HRESULT {hr}): {e}")
+                msg = f"[AutoCAD] COM-ошибка без повтора (HRESULT {hr}): {e}"
+                print(msg)
+                log_error(msg, module="AutoCAD")
                 raise
             last = e
         time.sleep(delay)
@@ -126,8 +129,8 @@ class AutoCADConnector:
             if norm_lisp not in existing:
                 new_paths = (current_paths.rstrip(";") + ";" + lisp_dir) if current_paths else lisp_dir
                 files_prefs.TrustedPaths = new_paths
-        except Exception:
-            pass
+        except Exception as e:
+            log_warn("Не удалось обновить TrustedPaths", exc=e, module="AutoCAD")
             
     def get_active_document_name(self) -> str:
         """
@@ -137,7 +140,8 @@ class AutoCADConnector:
             return "Нет открытого чертежа"
         try:
             return self.doc.Name
-        except Exception:
+        except Exception as e:
+            log_warn("Не удалось прочитать имя документа", exc=e, module="AutoCAD")
             return "Неизвестный чертеж"
 
     def find_open_document(self, filepath_or_name: str):
@@ -170,7 +174,7 @@ class AutoCADConnector:
         try:
             return _retry_busy(_check, max_attempts=40, delay=0.25)
         except Exception as e:
-            print(f"Предупреждение при поиске открытого документа: {e}")
+            log_warn("Предупреждение при поиске открытого документа", exc=e, module="AutoCAD")
             return None
 
     def get_open_documents(self):
@@ -194,7 +198,8 @@ class AutoCADConnector:
 
         try:
             return _retry_busy(_fetch, max_attempts=40, delay=0.25)
-        except Exception:
+        except Exception as e:
+            log_warn("Предупреждение при получении списка открытых документов", exc=e, module="AutoCAD")
             return []
 
     def open_document(self, filepath: str, read_only: bool = True):
@@ -287,7 +292,7 @@ class AutoCADConnector:
         try:
             _retry_busy(_do_close, max_attempts=15, delay=0.25)
         except Exception as e:
-            print(f"Предупреждение при закрытии документа: {e}")
+            log_warn("Предупреждение при закрытии документа", exc=e, module="AutoCAD")
         finally:
             if doc_path:
                 self._opened_by_us.discard(os.path.abspath(doc_path).lower())
@@ -322,7 +327,7 @@ class AutoCADConnector:
                     self.close_document(doc, save_changes=False)
                     closed_count += 1
                 except Exception as e:
-                    print(f"Предупреждение при закрытии открытого программой чертежа '{path}': {e}")
+                    log_warn(f"Предупреждение при закрытии открытого программой чертежа '{path}'", exc=e, module="AutoCAD")
             else:
                 self._opened_by_us.discard(path)
 
@@ -360,7 +365,7 @@ class AutoCADConnector:
             _retry_busy(_do_activate, max_attempts=15, delay=0.25)
             self.doc = doc
         except Exception as e:
-            print(f"Предупреждение: не удалось активировать документ: {e}")
+            log_warn("Предупреждение: не удалось активировать документ", exc=e, module="AutoCAD")
 
 
     def disconnect(self):
@@ -423,7 +428,7 @@ class AutoCADConnector:
 
             self.app.ZoomWindow(p1, p2)
         except Exception as e:
-            print(f"Предупреждение: не удалось центрировать окно в AutoCAD: {e}")
+            log_warn("Не удалось центрировать окно в AutoCAD", exc=e, module="AutoCAD")
 
     def highlight_object(self, handle: str = "", object_id: int = 0):
         """
@@ -452,11 +457,11 @@ class AutoCADConnector:
                 try:
                     obj.Highlight(True)
                     self._last_highlighted_handle = handle or getattr(obj, 'Handle', '')
-                except Exception:
+                except Exception as e:
                     # Некоторые сторонние ARX объекты могут не поддерживать метод Highlight
-                    pass
+                    log_warn("Объект не поддерживает метод Highlight", exc=e, module="AutoCAD")
         except Exception as e:
-            print(f"Предупреждение: не удалось подсветить объект в AutoCAD: {e}")
+            log_warn("Не удалось подсветить объект в AutoCAD", exc=e, module="AutoCAD")
 
     def clear_highlight(self):
         """
@@ -466,8 +471,8 @@ class AutoCADConnector:
             try:
                 old_obj = self.doc.HandleToObject(self._last_highlighted_handle)
                 old_obj.Highlight(False)
-            except Exception:
-                pass
+            except Exception as e:
+                log_warn("Не удалось снять подсветку с предыдущего объекта", exc=e, module="AutoCAD")
             self._last_highlighted_handle = None
 
     def activate_layout(self, layout_name: str):
@@ -485,7 +490,7 @@ class AutoCADConnector:
                     
             self.doc.ActiveLayout = self.doc.Layouts.Item(layout_name)
         except Exception as e:
-            print(f"Предупреждение: не удалось активировать Layout '{layout_name}': {e}")
+            log_warn(f"Не удалось активировать Layout '{layout_name}'", exc=e, module="AutoCAD")
 
     def show_frame(self, frame, zoom: bool = True, highlight: bool = True):
         """
@@ -504,7 +509,7 @@ class AutoCADConnector:
                     doc, _ = self.open_document(frame.dwg_path)
                     self.activate_document(doc)
                 except Exception as e:
-                    print(f"Предупреждение: не удалось переключиться на чертеж {frame.dwg_path}: {e}")
+                    log_warn(f"Не удалось переключиться на чертеж {frame.dwg_path}", exc=e, module="AutoCAD")
 
         target_layout = getattr(frame, "layout_name", "Model") or "Model"
         if getattr(frame, "source_type", "") == "Layout":
@@ -537,8 +542,8 @@ class AutoCADConnector:
             if getattr(self.app, 'WindowState', 1) == 2:  # acMin = 2
                 self.app.WindowState = 3  # acMax = 3
             self.app.Visible = True
-        except Exception:
-            pass
+        except Exception as e:
+            log_warn("Не удалось развернуть окно AutoCAD", exc=e, module="AutoCAD")
 
 
 if __name__ == "__main__":

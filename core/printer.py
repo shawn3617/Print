@@ -14,6 +14,7 @@ class PrintCancelledError(Exception):
 # вида "Item.ModelSpace" / "Open.ModelSpace" — старый com_retry такое не повторял.
 from core.autocad_connector import _retry_busy
 from core.plotter_installer import install_bundled_plotters
+from core.logger import log_warn, log_error
 
 
 def _safe_file_part(text, max_len: int) -> str:
@@ -23,9 +24,16 @@ def _safe_file_part(text, max_len: int) -> str:
     return cleaned[:max_len].rstrip(" .")
 
 
-def _warn(what: str, e: Exception) -> None:
-    """Не прерывает печать, но оставляет в консоли причину (правило: ошибки не глотать молча)."""
-    print(f"[Печать] Предупреждение: {what}: {type(e).__name__}: {e}")
+def _warn(what: str, e: Exception = None) -> None:
+    """Не прерывает печать, но оставляет в консоли и логе причину (правило: ошибки не глотать молча)."""
+    if e is not None:
+        msg = f"[Печать] Предупреждение: {what}: {type(e).__name__}: {e}"
+        print(msg)
+        log_warn(msg, exc=e, module="Печать")
+    else:
+        msg = f"[Печать] Предупреждение: {what}"
+        print(msg)
+        log_warn(msg, module="Печать")
 
 
 class BatchPrinter:
@@ -445,7 +453,13 @@ class BatchPrinter:
                         cur_layout.PlotWithPlotStyles = True
                         cur_layout.PlotWithLineweights = True
                         
-                        media_name = media_map.get(frame.paper_format, canonical_media_name)
+                        media_name = media_map.get(frame.paper_format)
+                        if not media_name:
+                            media_name = canonical_media_name
+                            warn_msg = (f"У плоттера «{printer_name}» нет бумаги для формата {frame.paper_format} "
+                                        f"(лист {frame.sheet_number}) — применен резервный формат «{canonical_media_name}»")
+                            frame.fallback_warning = warn_msg
+                            _warn(warn_msg)
                         if media_name:
                             try:
                                 cur_layout.CanonicalMediaName = media_name
@@ -523,9 +537,12 @@ class BatchPrinter:
                         media_name = media_map.get(frame.paper_format)
                         if not media_name:
                             # Резервный формат: у плоттера нет бумаги под формат этой рамки
-                            print(f"Предупреждение: у плоттера «{printer_name}» нет бумаги для формата "
-                                  f"{frame.paper_format} (лист {frame.sheet_number}) — печать на резервном "
-                                  f"формате «{canonical_media_name}»")
+                            warn_msg = (f"У плоттера «{printer_name}» нет бумаги для формата "
+                                        f"{frame.paper_format} (лист {frame.sheet_number}) — печать на резервном "
+                                        f"формате «{canonical_media_name}»")
+                            frame.fallback_warning = warn_msg
+                            print(f"Предупреждение: {warn_msg}")
+                            _warn(warn_msg)
                             media_name = canonical_media_name
                         if getattr(cur_layout, "CanonicalMediaName", "") != media_name:
                             try:

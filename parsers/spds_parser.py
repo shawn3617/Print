@@ -3,7 +3,7 @@ import time
 from typing import List, Any
 from core.models import Frame, detect_paper_format, ALL_FORMATS
 from parsers.base_parser import BaseParser
-
+from core.logger import log_warn
 from core.resource_utils import get_resource_path, get_lisp_path
 
 
@@ -200,6 +200,7 @@ class SPDSParser(BaseParser):
             frames = self._find_frames_via_lisp(doc)
         except Exception as e:
             print(f"Предупреждение: LISP скан СПДС не сработал ({e}), пробуем перебор COM...")
+            log_warn(f"LISP скан СПДС не сработал ({e}), пробуем перебор COM", exc=e, module="SPDSParser")
             frames = self._find_frames_fallback_com(doc)
 
         from parsers.block_parser import BlockParser
