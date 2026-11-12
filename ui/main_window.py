@@ -265,9 +265,12 @@ class PrintManagerUI(QMainWindow):
     def init_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        window_layout = QVBoxLayout(central_widget)
+        window_layout.setContentsMargins(20, 20, 20, 20)
+        window_layout.setSpacing(8)
+        main_layout = QHBoxLayout()
         main_layout.setSpacing(20)
+        window_layout.addLayout(main_layout, stretch=1)
 
         # ЛЕВАЯ ЧАСТЬ
         left_layout = QVBoxLayout()
@@ -521,6 +524,7 @@ class PrintManagerUI(QMainWindow):
 
         # ПРАВАЯ ЧАСТЬ (настройки печати, расширенная панель)
         right_widget = QWidget()
+        self.settings_panel = right_widget
         right_widget.setMinimumWidth(300)
         right_widget.setMaximumWidth(360)
         right_layout = QVBoxLayout(right_widget)
@@ -674,11 +678,20 @@ class PrintManagerUI(QMainWindow):
         right_layout.addWidget(group_frames)
         right_layout.addStretch()
         
+        footer = QHBoxLayout()
+        footer.addStretch()
+        self.btn_toggle_settings = QPushButton("Свернуть настройки")
+        self.btn_toggle_settings.setProperty("cssClass", "btn_tool")
+        self.btn_toggle_settings.setCheckable(True)
+        self.btn_toggle_settings.toggled.connect(self.set_settings_collapsed)
+        footer.addWidget(self.btn_toggle_settings)
+
         self.btn_print = QPushButton("ПЕЧАТЬ (0 листов)")
         self.btn_print.setObjectName("btn_print")
         self.btn_print.setEnabled(False)
         self.btn_print.clicked.connect(self.print_selected_frames)
-        right_layout.addWidget(self.btn_print)
+        footer.addWidget(self.btn_print)
+        window_layout.addLayout(footer)
         
         main_layout.addWidget(right_widget)
         for button in (btn_refresh, self.btn_scan, btn_batch):
@@ -691,6 +704,11 @@ class PrintManagerUI(QMainWindow):
         # Горячая клавиша F2 для вызова журнала диагностики
         self.shortcut_f2 = QShortcut(QKeySequence("F2"), self)
         self.shortcut_f2.activated.connect(self.show_diagnostics_dialog)
+
+    def set_settings_collapsed(self, collapsed: bool):
+        self.settings_panel.setVisible(not collapsed)
+        self.btn_toggle_settings.setText("Показать настройки" if collapsed else "Свернуть настройки")
+        self.save_settings()
 
     def show_help_dialog(self):
         """Открывает окно руководства пользователя."""
@@ -778,6 +796,7 @@ class PrintManagerUI(QMainWindow):
         cfg = self.config_manager.load()
         if not isinstance(cfg, dict):
             cfg = {}
+        self.btn_toggle_settings.setChecked(cfg.get("settings_collapsed") is True)
         self.chk_sync_acad.setChecked(bool(cfg.get("sync_autocad", True)))
         self.chk_open_after.setChecked(bool(cfg.get("open_after_print", True)))
         
@@ -1204,6 +1223,7 @@ class PrintManagerUI(QMainWindow):
             "custom_block_name": custom_block_val,
             "theme": theme_val if theme_val else current_cfg.get("theme", "dark_catppuccin"),
             "hidden_columns": hidden_cols,
+            "settings_collapsed": self.btn_toggle_settings.isChecked(),
         }
         if window_geometry is not None:
             settings["window_geometry"] = window_geometry
