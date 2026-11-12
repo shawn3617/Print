@@ -44,6 +44,9 @@ echo Шаг 2/5: Сборка автономного приложения PyInst
 echo Режим окна: %WINDOW_MODE%
 echo ========================================================
 
+REM PyInstaller ищет DLL в PATH. Для упаковки используем только Python и системные каталоги Windows.
+setlocal
+set "PATH=%~dp0.venv\Scripts;%SystemRoot%\System32;%SystemRoot%"
 python -m PyInstaller --noconfirm --clean ^
   --onedir ^
   %WINDOW_MODE% ^
@@ -59,12 +62,13 @@ python -m PyInstaller --noconfirm --clean ^
   --add-data "config.json;." ^
   --add-data "autocad_to_pdf_icon.ico;." ^
   main.py
+endlocal & set "PYINSTALLER_EXIT=%ERRORLEVEL%"
 
-if %ERRORLEVEL% NEQ 0 (
+if %PYINSTALLER_EXIT% NEQ 0 (
   echo.
-  echo [ОШИБКА] Сборка PyInstaller завершилась с ошибкой %ERRORLEVEL%.
+  echo [ОШИБКА] Сборка PyInstaller завершилась с ошибкой %PYINSTALLER_EXIT%.
   pause
-  exit /b %ERRORLEVEL%
+  exit /b %PYINSTALLER_EXIT%
 )
 
 REM В дистрибутив входят как .fas (приоритет), так и .lsp (резерв при несовпадении версий AutoCAD)

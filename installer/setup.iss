@@ -46,6 +46,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; Копируем скомпилированное приложение из папки dist\PrintPDF
 Source: "..\dist\PrintPDF\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.py,*.pdb,*.git*"
 
+[InstallDelete]
+; Удаляем несовместимые библиотеки ICU, оставшиеся от предыдущей сборки 1.4.0.
+Type: files; Name: "{app}\_internal\icuuc.dll"
+Type: files; Name: "{app}\_internal\icudt78.dll"
+
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
