@@ -3,6 +3,7 @@ import unittest
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
 from PySide6.QtCore import QRect, QUrl
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from core.config_manager import ConfigManager
@@ -22,6 +23,20 @@ class TestBatchUI(unittest.TestCase):
         self.mock_config.load.return_value = {}
         self.mock_config.get.side_effect = lambda k, d=None: d
         self.win = PrintManagerUI(config_manager=self.mock_config)
+
+    def test_background_update_reaches_the_window(self):
+        update = MagicMock(version="1.4.1")
+        with patch("core.updater.check_for_updates", return_value=update), \
+                patch.object(self.win, "show_update_dialog") as show_update:
+            self.win.start_background_update_check()
+            for _ in range(100):
+                if show_update.called:
+                    break
+                QTest.qWait(10)
+
+            show_update.assert_called_once()
+            self.assertIs(self.win.available_update, update)
+            self.assertIn("last_update_check", self.mock_config.save.call_args.args[0])
 
     def test_restores_window_geometry_and_fits_it_to_available_screen(self):
         with TemporaryDirectory() as folder, patch.object(PrintManagerUI, "refresh_document_status"), \

@@ -218,6 +218,8 @@ class PrintProgressDialog(QDialog):
         QApplication.processEvents()
 
 class PrintManagerUI(QMainWindow):
+    update_check_finished = Signal(object, float)
+
     def __init__(self, config_manager=None):
         super().__init__()
         self.config_manager = config_manager or ConfigManager()
@@ -254,6 +256,7 @@ class PrintManagerUI(QMainWindow):
         self.refresh_document_status()
         self._is_loading_config = False
         self.available_update = None
+        self.update_check_finished.connect(self._finish_background_update_check, Qt.ConnectionType.QueuedConnection)
         QTimer.singleShot(2500, self.start_background_update_check)
 
     def setup_theme(self, theme_id: str = "dark_catppuccin"):
@@ -784,15 +787,18 @@ class PrintManagerUI(QMainWindow):
             try:
                 from core.updater import check_for_updates
                 info = check_for_updates(current_version=APP_VERSION, timeout=8.0)
-                self.config_manager.set("last_update_check", now)
-                self.config_manager.save()
-                if info:
-                    QTimer.singleShot(500, lambda: self.on_update_found(info))
+                self.update_check_finished.emit(info, now)
             except Exception as e:
                 print(f"[Updater] Ошибка фоновой проверки: {e}")
 
         t = threading.Thread(target=_bg_check, daemon=True)
         t.start()
+
+    def _finish_background_update_check(self, update_info, checked_at: float):
+        self.config_manager.load()
+        self.config_manager.save({"last_update_check": checked_at})
+        if update_info:
+            self.on_update_found(update_info)
 
     def on_update_found(self, update_info):
         """Вызывается в основном потоке при обнаружении новой версии."""
