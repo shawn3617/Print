@@ -570,6 +570,16 @@ class BatchPrinter:
                         # Даем AutoCAD время на регенерацию Paper Space
                         time.sleep(0.4)
                         
+                        # Сохраняем исходную ориентацию до смены плоттера и бумаги.
+                        original_paper = None
+                        if getattr(frame, "source_type", "") == "Layout":
+                            try:
+                                original_w, original_h = _retry_busy(cur_layout.GetPaperSize)
+                                original_rotation = _retry_busy(lambda: cur_layout.PlotRotation)
+                                original_paper = (original_w > original_h, original_rotation)
+                            except (AttributeError, ValueError, TypeError, pythoncom.com_error) as e:
+                                _warn(f"не удалось прочитать исходную ориентацию листа {frame.sheet_number}", e)
+
                         # 2. Настраиваем параметры листа Layout
                         def setup_layout_params():
                             cur_layout.ConfigName = printer_name
@@ -637,6 +647,13 @@ class BatchPrinter:
                                     cur_layout.CenterPlot = True
                             else:
                                 cur_layout.PlotType = 5  # acLayout
+                                if original_paper is not None:
+                                    was_landscape, rotation = original_paper
+                                    paper_w, paper_h = cur_layout.GetPaperSize()
+                                    if was_landscape != (paper_w > paper_h):
+                                        rotation = (1, 0, 3, 2)[rotation]
+                                    if cur_layout.PlotRotation != rotation:
+                                        cur_layout.PlotRotation = rotation
                         _retry_busy(setup_layout_params)
                     else:
                         # 1. Активируем вкладку Модель, только если в AutoCAD был активен лист Layout

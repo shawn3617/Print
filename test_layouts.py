@@ -74,9 +74,13 @@ class TestLayoutsSupport(unittest.TestCase):
 
         mock_layout1 = MagicMock()
         mock_layout1.Name = "Лист 1"
+        mock_layout1.GetPaperSize.side_effect = [(420, 297), (297, 420)]
+        mock_layout1.PlotRotation = 0
 
         mock_layout2 = MagicMock()
         mock_layout2.Name = "Лист 2"
+        mock_layout2.GetPaperSize.return_value = (420, 594)
+        mock_layout2.PlotRotation = 0
 
         def get_layout_item(name):
             if name == "Лист 1": return mock_layout1
@@ -110,6 +114,8 @@ class TestLayoutsSupport(unittest.TestCase):
         self.assertEqual(mock_layout2.ConfigName, "DWG To PDF.pc3")
         self.assertEqual(mock_layout1.CanonicalMediaName, "sys_A3")
         self.assertEqual(mock_layout2.CanonicalMediaName, "sys_A2")
+        self.assertEqual(mock_layout1.PlotRotation, 1)
+        self.assertEqual(mock_layout2.PlotRotation, 0)
 
         # PlotToFile вызван для каждого листа
         self.assertEqual(mock_doc.Plot.PlotToFile.call_count, 2)

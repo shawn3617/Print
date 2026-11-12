@@ -269,6 +269,8 @@ def verify_pdf(
         box = page.mediabox if page.mediabox else page.cropbox
         width_pt = float(box.width)
         height_pt = float(box.height)
+        if page.rotation % 180 == 90:
+            width_pt, height_pt = height_pt, width_pt
 
         # 1 pt = 25.4 / 72.0 мм (~0.352778 мм)
         w_mm = round(width_pt * 25.4 / 72.0, 1)

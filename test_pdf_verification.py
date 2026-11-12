@@ -175,6 +175,23 @@ class TestPdfVerification(unittest.TestCase):
         self.assertEqual(actual_fmt, "A3")
         self.assertEqual(exp_fmt, "A1")
 
+    def test_orientation_with_pdf_page_rotation(self):
+        frame = Frame(1, "1", "Лист 1", (0, 0, 0), (420, 297, 0), "Model", "A3")
+        source = create_synthetic_pdf(
+            [{"width_mm": 297.0, "height_mm": 420.0}],
+            os.path.join(self.temp_dir, "portrait.pdf"),
+        )
+        for angle in (90, 270):
+            with self.subTest(angle=angle):
+                output = os.path.join(self.temp_dir, f"rotated_{angle}.pdf")
+                writer = PdfWriter(clone_from=source)
+                writer.pages[0].rotate(angle)
+                writer.write(output)
+                report = verify_pdf(output, [frame])
+                self.assertTrue(report.is_valid, report.summary())
+                page = report.pages[0]
+                self.assertEqual((page.width_mm, page.height_mm), (420.0, 297.0))
+
     def test_real_autocad_multipage_pdf_verification(self):
         """Проверка реального многостраничного PDF, выведенного из AutoCAD"""
         pdf_path = os.path.abspath("tests/samples/pdf/Многостраничный_чертеж.pdf")
