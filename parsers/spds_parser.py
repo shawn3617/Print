@@ -18,6 +18,12 @@ def clean_rtf(text: str) -> str:
     s = re.sub(r'[{}]', '', s)
     return s.strip()
 
+
+def _join_stamp_fields(fields: dict, *keys: str) -> str:
+    lines = (clean_rtf(str(fields.get(key) or "").strip()) for key in keys)
+    return " ".join(line for line in lines if line)
+
+
 class SPDSParser(BaseParser):
     def __init__(self, spds_names: List[str] = None):
         """
@@ -104,8 +110,12 @@ class SPDSParser(BaseParser):
             shifr = clean_rtf(str(item.get("shifr") or "").strip())
             fields = item.get("fields") or {}
             form = str(item.get("form") or "").strip()
-            obj_name = clean_rtf(str(fields.get("ComplexName") or "").strip())
-            bld_name = clean_rtf(str(fields.get("DrawingName1") or "").strip()) if form == "3" else ""
+            if form == "3":
+                obj_name = _join_stamp_fields(fields, "ComplexName", "ComplexName1", "ComplexName2")
+                bld_name = _join_stamp_fields(fields, "DrawingName1", "DrawingName2", "DrawingName3")
+            else:
+                obj_name = _join_stamp_fields(fields, "ComplexName")
+                bld_name = ""
 
             num = clean_rtf(num)
             name = clean_rtf(name)

@@ -1,9 +1,11 @@
 import os
 import unittest
+from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QRect, QUrl
 from PySide6.QtWidgets import QApplication
 
+from core.config_manager import ConfigManager
 from core.models import Frame
 from ui.main_window import PrintManagerUI
 
@@ -20,6 +22,32 @@ class TestBatchUI(unittest.TestCase):
         self.mock_config.load.return_value = {}
         self.mock_config.get.side_effect = lambda k, d=None: d
         self.win = PrintManagerUI(config_manager=self.mock_config)
+
+    def test_restores_window_geometry_and_fits_it_to_available_screen(self):
+        with TemporaryDirectory() as folder, patch.object(PrintManagerUI, "refresh_document_status"), \
+                patch("ui.main_window.get_stats_manager"):
+            path = os.path.join(folder, "config.json")
+            window = PrintManagerUI(ConfigManager(path))
+            window.show()
+            available = window.screen().availableGeometry()
+            window.setGeometry(QRect(available.left() + 4, available.top() + 40, 790, 600))
+            self.app.processEvents()
+            expected = window.geometry()
+            window.close()
+
+            restored = PrintManagerUI(ConfigManager(path))
+            restored.show()
+            self.app.processEvents()
+            self.assertEqual(restored.geometry(), expected)
+            restored.setGeometry(available.right() + 4000, available.top(),
+                                 available.width() + 900, available.height() + 500)
+            restored.close()
+
+            recovered = PrintManagerUI(ConfigManager(path))
+            recovered.show()
+            self.app.processEvents()
+            self.assertTrue(available.contains(recovered.frameGeometry()))
+            recovered.close()
 
     def test_add_table_row_with_dwg(self):
         self.win.table.setRowCount(0)

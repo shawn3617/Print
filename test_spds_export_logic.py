@@ -181,6 +181,26 @@ def parse_spds_json_data(items) -> list:
 
 
 class TestSPDSExportLogic(unittest.TestCase):
+    def test_form_3_multiline_object_and_building(self):
+        from parsers.spds_parser import SPDSParser
+
+        fields = {
+            "ComplexName": "Группа жилых домов,",
+            "ComplexName1": " корпуса 1 и 2 ",
+            "ComplexName2": "МО",
+            "DrawingName1": "",
+            "DrawingName2": "Корпус №1",
+        }
+        parser = SPDSParser()
+        form3, form4 = parser._convert_items_to_frames([
+            {"form": "3", "sheet_number": "2", "format": "A2", "fields": fields},
+            {"form": "4", "sheet_number": "1", "format": "A2", "fields": fields},
+        ])
+        self.assertEqual(form3.object_name, "Группа жилых домов, корпуса 1 и 2 МО")
+        self.assertEqual(form3.building_name, "Корпус №1")
+        self.assertEqual(form4.object_name, "Группа жилых домов,")
+        self.assertEqual(form4.building_name, "")
+
     def test_user_spds_stamp_dxf_extraction(self):
         """Тест на реальном объекте пользователя с пустыми Sheet/Drawing type и заполненными Лист/DrawingName1"""
         user_dxf = [

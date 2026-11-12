@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QFileDialog, QAbstractItemView, QDialog, QProgressBar,
     QLineEdit, QSizePolicy, QListView, QFrame, QMenu, QInputDialog
 )
-from PySide6.QtCore import Qt, Signal, QMimeData, QTimer
+from PySide6.QtCore import QByteArray, Qt, Signal, QMimeData, QTimer
 from PySide6.QtGui import QDrag, QAction, QGuiApplication, QShortcut, QKeySequence, QIcon
 
 from core.autocad_connector import AutoCADConnector
@@ -40,6 +40,18 @@ from ui.about_dialog import AboutDialog, APP_VERSION
 from ui.diagnostics_dialog import DiagnosticsDialog
 from ui.report_dialog import ReportDialog
 from ui.format_dialog import FormatSelectDialog
+
+
+class PrintSettingComboBox(QComboBox):
+    def __init__(self):
+        super().__init__()
+        self.currentTextChanged.connect(self.setToolTip)
+
+    def showPopup(self):
+        view = self.view()
+        content_width = view.sizeHintForColumn(0) + view.verticalScrollBar().sizeHint().width() + 8
+        view.setMinimumWidth(min(content_width, self.screen().availableGeometry().width()))
+        super().showPopup()
 
 
 class ReorderableTableWidget(QTableWidget):
@@ -233,6 +245,12 @@ class PrintManagerUI(QMainWindow):
         self.setup_theme(self.current_theme)
         self.init_ui()
         self.apply_initial_config()
+        saved_geometry = self.config_manager.get("window_geometry")
+        self._check_restored_geometry = (
+            isinstance(saved_geometry, str)
+            and saved_geometry.isascii()
+            and self.restoreGeometry(QByteArray.fromBase64(saved_geometry.encode("ascii")))
+        )
         self.refresh_document_status()
         self._is_loading_config = False
         self.available_update = None
@@ -267,11 +285,11 @@ class PrintManagerUI(QMainWindow):
         top_bar.addWidget(btn_refresh)
         
         top_bar.addWidget(QLabel("Источник:"))
-        self.combo_source = QComboBox()
+        self.combo_source = PrintSettingComboBox()
         self.combo_source.setView(QListView())
         self.combo_source.addItems(["Модель (Model Space)", "Листы (Layouts)"])
         self.combo_source.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.combo_source.setMinimumContentsLength(6)
+        self.combo_source.setMinimumContentsLength(12)
         self.combo_source.currentTextChanged.connect(self.on_source_mode_changed)
         top_bar.addWidget(self.combo_source)
         
@@ -284,9 +302,12 @@ class PrintManagerUI(QMainWindow):
         batch_bar = QHBoxLayout()
         batch_bar.setSpacing(8)
 
-        lbl_batch = QLabel("Пакет чертежей:")
-        lbl_batch.setProperty("cssClass", "header_accent")
-        batch_bar.addWidget(lbl_batch)
+        btn_batch = QPushButton("Пакет чертежей")
+        btn_batch.setProperty("cssClass", "btn_tool")
+        batch_menu = QMenu(btn_batch)
+        batch_menu.addAction("Закрыть чертежи программы", self.close_opened_documents_dialog)
+        btn_batch.setMenu(batch_menu)
+        batch_bar.addWidget(btn_batch)
 
         btn_add_dwg = QPushButton("+ DWG...")
         btn_add_dwg.setProperty("cssClass", "btn_tool")
@@ -306,31 +327,16 @@ class PrintManagerUI(QMainWindow):
         btn_clear.clicked.connect(self.clear_frames)
         batch_bar.addWidget(btn_clear)
 
-        btn_close_opened = QPushButton("Закрыть чертежи")
-        btn_close_opened.setProperty("cssClass", "btn_tool")
-        btn_close_opened.setToolTip("Закрыть в AutoCAD все чертежи, которые были открыты программой (для просмотра или печати)")
-        btn_close_opened.clicked.connect(self.close_opened_documents_dialog)
-        batch_bar.addWidget(btn_close_opened)
-
         batch_bar.addStretch()
 
-        self.btn_help = QPushButton("📖 Инструкция (F1)")
-        self.btn_help.setProperty("cssClass", "btn_tool")
-        self.btn_help.setToolTip("Открыть иллюстрированное руководство пользователя и частые вопросы (F1)")
-        self.btn_help.clicked.connect(self.show_help_dialog)
-        batch_bar.addWidget(self.btn_help)
-
-        self.btn_diagnostics = QPushButton("🐞 Диагностика (F2)")
-        self.btn_diagnostics.setProperty("cssClass", "btn_tool")
-        self.btn_diagnostics.setToolTip("Журнал ошибок, диагностика подключения и системная информация (F2)")
-        self.btn_diagnostics.clicked.connect(self.show_diagnostics_dialog)
-        batch_bar.addWidget(self.btn_diagnostics)
-
-        self.btn_about = QPushButton("ℹ️ О программе")
-        self.btn_about.setProperty("cssClass", "btn_tool")
-        self.btn_about.setToolTip("Информация о программе, версии и системе")
-        self.btn_about.clicked.connect(self.show_about_dialog)
-        batch_bar.addWidget(self.btn_about)
+        btn_help = QPushButton("Справка")
+        btn_help.setProperty("cssClass", "btn_tool")
+        help_menu = QMenu(btn_help)
+        help_menu.addAction("Инструкция (F1)", self.show_help_dialog)
+        help_menu.addAction("Диагностика (F2)", self.show_diagnostics_dialog)
+        help_menu.addAction("О программе", self.show_about_dialog)
+        btn_help.setMenu(help_menu)
+        batch_bar.addWidget(btn_help)
 
         self.btn_update_alert = QPushButton("✨ Обновление")
         self.btn_update_alert.setObjectName("btn_update_alert")
@@ -550,12 +556,12 @@ class PrintManagerUI(QMainWindow):
         profile_btns = QHBoxLayout()
         profile_btns.setSpacing(6)
 
-        self.btn_save_profile = QPushButton("💾 Сохранить")
+        self.btn_save_profile = QPushButton("Сохранить")
         self.btn_save_profile.setToolTip("Сохранить текущие параметры в активный профиль")
         self.btn_save_profile.clicked.connect(self.on_save_current_profile)
         profile_btns.addWidget(self.btn_save_profile)
 
-        self.btn_new_profile = QPushButton("➕ Новый...")
+        self.btn_new_profile = QPushButton("Новый…")
         self.btn_new_profile.setToolTip("Создать новый профиль на основе текущих настроек")
         self.btn_new_profile.clicked.connect(self.on_create_new_profile)
         profile_btns.addWidget(self.btn_new_profile)
@@ -565,6 +571,10 @@ class PrintManagerUI(QMainWindow):
         self.btn_menu_profile.clicked.connect(self.show_profile_menu)
         profile_btns.addWidget(self.btn_menu_profile)
 
+        for button in (self.btn_save_profile, self.btn_new_profile, self.btn_menu_profile):
+            button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+            button.setStyleSheet("padding-left: 10px; padding-right: 10px;")
+
         profile_layout.addLayout(profile_btns)
         right_layout.addWidget(group_profile)
 
@@ -572,14 +582,15 @@ class PrintManagerUI(QMainWindow):
         form_layout = QFormLayout(group_printer)
         form_layout.setSpacing(14)
         
-        self.combo_printers = QComboBox()
+        self.combo_printers = PrintSettingComboBox()
         self.combo_printers.currentTextChanged.connect(self.on_printer_changed)
         form_layout.addRow(QLabel("Принтер:"), self.combo_printers)
         
-        self.combo_papers = QComboBox()
-        self.combo_papers.setToolTip("Используется только если программа не смогла автоматически подобрать нужный размер бумаги для рамки (например, если в принтере нет такого формата)")
+        self.combo_papers = PrintSettingComboBox()
+        fallback_label = QLabel("Резервный:")
+        fallback_label.setToolTip("Используется, если плоттер не поддерживает размер бумаги для рамки")
         self.combo_papers.currentTextChanged.connect(lambda _: self.save_settings())
-        form_layout.addRow(QLabel("Резервный:"), self.combo_papers)
+        form_layout.addRow(fallback_label, self.combo_papers)
         
         self.combo_style = QComboBox()
         self.combo_style.currentTextChanged.connect(lambda _: self.save_settings())
@@ -670,6 +681,8 @@ class PrintManagerUI(QMainWindow):
         right_layout.addWidget(self.btn_print)
         
         main_layout.addWidget(right_widget)
+        for button in (btn_refresh, self.btn_scan, btn_batch):
+            button.setMinimumWidth(button.sizeHint().width())
 
         # Горячая клавиша F1 для вызова руководства пользователя
         self.shortcut_f1 = QShortcut(QKeySequence("F1"), self)
@@ -1155,7 +1168,7 @@ class PrintManagerUI(QMainWindow):
             else:
                 QMessageBox.warning(self, "Ошибка импорта", err)
 
-    def save_settings(self):
+    def save_settings(self, *, window_geometry=None):
         """Сохраняет текущие параметры печати и состояния чекбоксов в config.json."""
         if getattr(self, "_is_loading_config", False):
             return
@@ -1192,6 +1205,8 @@ class PrintManagerUI(QMainWindow):
             "theme": theme_val if theme_val else current_cfg.get("theme", "dark_catppuccin"),
             "hidden_columns": hidden_cols,
         }
+        if window_geometry is not None:
+            settings["window_geometry"] = window_geometry
         self.config_manager.save(settings)
         
     def dragEnterEvent(self, event):
@@ -2090,6 +2105,27 @@ class PrintManagerUI(QMainWindow):
         if 0 <= row < self.table.rowCount() - 1:
             self.move_row(row, row + 1)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._check_restored_geometry:
+            return
+        self._check_restored_geometry = False
+        if self.isMaximized() or self.isFullScreen():
+            return
+
+        available = self.screen().availableGeometry()
+        frame = self.frameGeometry()
+        if available.contains(frame):
+            return
+        self.resize(
+            min(self.width(), available.width() - (frame.width() - self.width())),
+            min(self.height(), available.height() - (frame.height() - self.height())),
+        )
+        frame = self.frameGeometry()
+        frame.moveLeft(max(available.left(), min(frame.left(), available.right() - frame.width() + 1)))
+        frame.moveTop(max(available.top(), min(frame.top(), available.bottom() - frame.height() + 1)))
+        self.move(frame.topLeft())
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.update_table_tools_layout(event.size().width())
@@ -2527,7 +2563,7 @@ class PrintManagerUI(QMainWindow):
 
     def closeEvent(self, event):
         try:
-            self.save_settings()
+            self.save_settings(window_geometry=bytes(self.saveGeometry().toBase64()).decode("ascii"))
         except Exception:
             pass
         try:

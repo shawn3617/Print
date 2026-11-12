@@ -41,6 +41,12 @@
            (/= (setq s (sht-val-str (cdr p))) ""))
     s))
 
+(defun sht-join-fields (keys dat / key value result)
+  (foreach key keys
+    (if (setq value (sht-get-val key dat))
+      (setq result (if result (strcat result " " value) value))))
+  result)
+
 ;; Первое непустое из списка полей
 (defun sht-find-first (keys dat / res)
   (while (and keys (null res))
@@ -140,8 +146,12 @@
                 ;;    «Name 1», «Name 2» — фамилии в «Согласовано»)
                 (setq sh-name
                   (cond
-                    ((= form "3") (sht-find-first '("Drawing type") dat))
-                    ((= form "4") (sht-find-first '("DrawingName1" "ComplexName" "Drawing type") dat))
+                    ((= form "3")
+                     (sht-join-fields '("Drawing type" "Drawing type1" "Drawing type2") dat))
+                    ((= form "4")
+                     (cond
+                       ((sht-join-fields '("DrawingName1" "DrawingName2" "DrawingName3") dat))
+                       ((sht-find-first '("ComplexName" "Drawing type") dat))))
                     ((= form "5") (sht-find-first '("DrawingName1") dat))
                     (t nil)))
                 (if (null sh-name) (setq sh-name ""))
