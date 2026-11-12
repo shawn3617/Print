@@ -103,6 +103,8 @@ class DocumentScanner:
                 from collections import Counter
                 scales = []
                 for f in all_frames:
+                    if f.source_type == "Polyline" and f.is_ambiguous:
+                        continue
                     fw, fh = ALL_FORMATS.get(f.paper_format, (594, 420))
                     w = max(abs(f.max_point[0] - f.min_point[0]), abs(f.max_point[1] - f.min_point[1]))
                     sc = round(w / fw)
@@ -112,6 +114,10 @@ class DocumentScanner:
                     common_scale, count = Counter(scales).most_common(1)[0]
                     if count >= len(all_frames) * 0.5 and common_scale in [1, 10, 20, 25, 50, 100, 200]:
                         for f in all_frames:
+                            # У каждой полилинии свои признаки масштаба. Общий масштаб DWG
+                            # не должен скрывать варианты или заменять подтверждённый формат.
+                            if f.source_type == "Polyline" or f.format_from_source:
+                                continue
                             fw, fh = ALL_FORMATS.get(f.paper_format, (594, 420))
                             w = max(abs(f.max_point[0] - f.min_point[0]), abs(f.max_point[1] - f.min_point[1]))
                             h = min(abs(f.max_point[0] - f.min_point[0]), abs(f.max_point[1] - f.min_point[1]))

@@ -8,6 +8,7 @@
 - Применить выбранный формат к одному или ко всем выделенным листам.
 """
 
+from math import isfinite
 from typing import List, Tuple, Optional
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
@@ -77,7 +78,7 @@ class FormatSelectDialog(QDialog):
         self.btn_group = QButtonGroup(self)
         possible = getattr(self.frame, "possible_formats", []) if self.frame else []
 
-        if possible and len(possible) > 1:
+        if len(possible) > 1 and (self.frame.is_ambiguous or self.frame.user_override):
             cand_box = QGroupBox("⚠️ Предложенные варианты при неоднозначности")
             cand_box.setStyleSheet("QGroupBox { font-weight: bold; }")
             cand_layout = QVBoxLayout(cand_box)
@@ -89,8 +90,8 @@ class FormatSelectDialog(QDialog):
             for idx, (fmt_name, sc) in enumerate(possible):
                 is_selected = (fmt_name == curr_fmt and sc == curr_scale)
                 rb = QRadioButton(f"{fmt_name} — масштаб 1:{sc}")
-                rb.setChecked(is_selected or idx == 0)
                 self.btn_group.addButton(rb, idx)
+                rb.setChecked(is_selected)
                 cand_layout.addWidget(rb)
 
                 # При клике на радиокнопку синхронизируем выпадающие списки ручного выбора
@@ -168,7 +169,7 @@ class FormatSelectDialog(QDialog):
 
         self._update_calculated_preview()
 
-    def _on_candidate_toggled(self, checked: bool, fmt_name: str, scale_val: int):
+    def _on_candidate_toggled(self, checked: bool, fmt_name: str, scale_val: float):
         if not checked:
             return
         idx = self.combo_format.findData(fmt_name)
@@ -187,8 +188,13 @@ class FormatSelectDialog(QDialog):
         fw, fh = ALL_FORMATS.get(fmt, (594, 420))
 
         if self.frame:
-            w_draw = max(abs(self.frame.max_point[0] - self.frame.min_point[0]), abs(self.frame.max_point[1] - self.frame.min_point[1]))
-            h_draw = min(abs(self.frame.max_point[0] - self.frame.min_point[0]), abs(self.frame.max_point[1] - self.frame.min_point[1]))
+            bounds = self.frame.format_candidate_bounds.get((fmt, sc))
+            if bounds is None:
+                x1, y1, _ = self.frame.min_point
+                x2, y2, _ = self.frame.max_point
+            else:
+                x1, y1, x2, y2 = bounds
+            w_draw, h_draw = sorted((abs(x2 - x1), abs(y2 - y1)), reverse=True)
             w_mm = w_draw / sc if sc > 0 else 0
             h_mm = h_draw / sc if sc > 0 else 0
             err = abs(w_mm - fw) + abs(h_mm - fh)
@@ -203,13 +209,15 @@ class FormatSelectDialog(QDialog):
         data = self.combo_format.currentData()
         return str(data) if data else self.combo_format.currentText().split()[0]
 
-    def get_selected_scale(self) -> int:
-        txt = self.combo_scale.currentText().strip()
+    def get_selected_scale(self) -> float:
+        txt = self.combo_scale.currentText().strip().replace(",", ".")
         try:
-            val = int(txt)
-            return max(1, val)
+            val = float(txt)
         except ValueError:
             return 1
+        if not isfinite(val) or val < 1:
+            return 1
+        return int(val) if val.is_integer() else val
 
     def apply_to_selected_rows(self) -> bool:
         return self.chk_apply_all.isChecked() if self.chk_apply_all else False

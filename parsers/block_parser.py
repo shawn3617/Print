@@ -260,7 +260,8 @@ class BlockParser(BaseParser):
                 scale=scale_val,
                 format_reason=reason,
                 possible_formats=possible_fmts,
-                is_ambiguous=is_ambig
+                is_ambiguous=is_ambig,
+                format_from_source=bool(explicit_fmt),
             )
             frames.append(frame)
 

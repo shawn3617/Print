@@ -96,6 +96,7 @@ class SPDSParser(BaseParser):
                 h = fh
 
             # 3. Геометрический расчет формата по габаритам
+            format_from_source = detected_fmt is not None
             det_res = detect_paper_format_detailed(w, h, scale=sc)
             if not detected_fmt:
                 detected_fmt = det_res.paper_format
@@ -152,7 +153,8 @@ class SPDSParser(BaseParser):
                 scale=scale_val,
                 format_reason=reason,
                 possible_formats=[(c.paper_format, c.scale) for c in det_res.candidates],
-                is_ambiguous=is_ambig
+                is_ambiguous=is_ambig,
+                format_from_source=format_from_source,
             )
             frames.append(frame)
 

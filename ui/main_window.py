@@ -1766,7 +1766,7 @@ class PrintManagerUI(QMainWindow):
             item.setToolTip(f"⚠️ {warn}\n\n(Дважды кликните по ячейке для ручного выбора формата)")
         elif is_ambig and not user_over:
             item.setText(f"⚠️ {fmt_display}")
-            alts = [f"{af} (М1:{asc})" for af, asc in pos_fmts if af != fmt_display]
+            alts = [f"{af} (М1:{asc})" for af, asc in pos_fmts if (af, asc) != (fmt_display, scale_val)]
             alt_text = f"\nВозможные альтернативы: {', '.join(alts)}" if alts else ""
             item.setToolTip(
                 f"⚠️ Неоднозначный формат!\n"
@@ -1792,8 +1792,7 @@ class PrintManagerUI(QMainWindow):
             item.setText(f"{fmt_display}{scale_str}")
             item.setToolTip(
                 f"Формат: {fmt_display}{scale_str}\n"
-                f"Основание: {fmt_reason or 'Геометрия'}\n\n"
-                f"Дважды кликните для изменения."
+                f"Основание: {fmt_reason or 'Геометрия'}"
             )
 
     def _refresh_table_formats(self):
@@ -1837,34 +1836,36 @@ class PrintManagerUI(QMainWindow):
 
             for r in target_rows:
                 if 0 <= r < len(self.frames):
-                    f = self.frames[r]
-                    f.paper_format = new_fmt
-                    f.scale = new_scale
-                    f.format_reason = f"Задано вручную: {new_fmt} (М1:{new_scale})"
-                    f.is_ambiguous = False
-                    f.user_override = True
-                    f.fallback_warning = ""
-                    self._update_format_item(r, f)
+                    self._set_manual_format(r, new_fmt, new_scale)
 
-            self.update_print_counter()
             self.update_format_filter_items()
+            self.apply_filter()
             log_info(f"Формат листа {frame.sheet_number} изменен пользователем на {new_fmt} (М1:{new_scale})", module="UI")
 
-    def quick_switch_format(self, row: int, new_format: str, new_scale: int):
+    def quick_switch_format(self, row: int, new_format: str, new_scale: float):
         """Быстрое переключение формата на альтернативный вариант из контекстного меню."""
         if not (0 <= row < len(self.frames)):
             return
+        self._set_manual_format(row, new_format, new_scale)
+        self.update_format_filter_items()
+        self.apply_filter()
         frame = self.frames[row]
-        frame.paper_format = new_format
-        frame.scale = new_scale
-        frame.format_reason = f"Уточнено пользователем: {new_format} (М1:{new_scale})"
+        log_info(f"Быстрое переключение формата листа {frame.sheet_number} на {new_format} (М1:{new_scale})", module="UI")
+
+    def _set_manual_format(self, row: int, paper_format: str, scale: float):
+        frame = self.frames[row]
+        bounds = frame.format_candidate_bounds.get((paper_format, scale))
+        if bounds is not None:
+            x1, y1, x2, y2 = bounds
+            frame.min_point = (x1, y1, frame.min_point[2])
+            frame.max_point = (x2, y2, frame.max_point[2])
+        frame.paper_format = paper_format
+        frame.scale = scale
+        frame.format_reason = f"Задано вручную: {paper_format} (М1:{scale})"
         frame.is_ambiguous = False
         frame.user_override = True
         frame.fallback_warning = ""
         self._update_format_item(row, frame)
-        self.update_print_counter()
-        self.update_format_filter_items()
-        log_info(f"Быстрое переключение формата листа {frame.sheet_number} на {new_format} (М1:{new_scale})", module="UI")
         
     def is_filter_active(self) -> bool:
         """Возвращает True, если активен поиск по тексту или выбран конкретный формат."""
@@ -2328,7 +2329,9 @@ class PrintManagerUI(QMainWindow):
                 menu.addAction(act_fmt)
 
                 possible = getattr(frame, "possible_formats", [])
-                alts = [(f, s) for f, s in possible if f != frame.paper_format]
+                alts = [(f, s) for f, s in possible if (f, s) != (frame.paper_format, frame.scale)]
+                if not (frame.is_ambiguous or frame.user_override):
+                    alts = []
                 if alts:
                     quick_menu = menu.addMenu("➜ Быстро переключить формат")
                     for alt_fmt, alt_scale in alts:

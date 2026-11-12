@@ -52,6 +52,41 @@ class TestBatchScanner(unittest.TestCase):
             # doc2 был открыт нами -> close_document ДОЛЖЕН вызваться для doc2
             self.connector.close_document.assert_called_once_with(doc2, save_changes=False)
 
+    def test_explicit_spds_formats_survive_identical_frame_dimensions(self):
+        from parsers.spds_parser import SPDSParser
+
+        rows = [
+            {"sheet_number": "2", "format": "A2", "scale": 100, "max_x": 42000, "max_y": 59400},
+            {"sheet_number": "1", "format": "A4", "scale": 200, "min_x": 50000,
+             "max_x": 92000, "max_y": 59400},
+        ]
+        with patch.object(SPDSParser, "_run_lisp_export", return_value=rows):
+            frames = self.scanner.scan_document(MagicMock(), "spds")
+
+        self.assertEqual(
+            [(f.sheet_number, f.paper_format, f.scale, f.is_ambiguous) for f in frames],
+            [("1", "A4", 200, False), ("2", "A2", 100, False)],
+        )
+
+    def test_explicit_block_format_survives_dominant_scale(self):
+        from parsers.block_parser import BlockParser
+
+        rows = [
+            {"block_name": "SHT_A4P", "scale": 200, "max_x": 42000, "max_y": 59400,
+             "attrs": {"FORMAT": "A4", "SHEET": "2"}},
+            {"block_name": "SHT_A2L", "scale": 100, "min_x": 50000, "max_x": 109400,
+             "max_y": 42000, "attrs": {"FORMAT": "A2", "SHEET": "1"}},
+            {"block_name": "SHT_A4P", "scale": 200, "min_x": 120000, "max_x": 162000,
+             "max_y": 59400, "attrs": {"FORMAT": "A4", "SHEET": "3"}},
+        ]
+        with patch.object(BlockParser, "_run_lisp_export", return_value=rows):
+            frames = self.scanner.scan_document(MagicMock(), "all_blocks")
+
+        self.assertEqual(
+            [(f.sheet_number, f.paper_format, f.scale) for f in frames],
+            [("1", "A2", 100), ("2", "A4", 200), ("3", "A4", 200)],
+        )
+
     def test_scan_files_cancelled(self):
         f1 = os.path.abspath("C:/Drawings/plan1.dwg")
         f2 = os.path.abspath("C:/Drawings/plan2.dwg")

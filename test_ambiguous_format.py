@@ -154,6 +154,7 @@ class TestMainWindowFormatClarification(unittest.TestCase):
             scale=100,
             format_reason="Геометрия М1:100",
             possible_formats=[("A2", 100), ("A4", 200)],
+            format_candidate_bounds={("A4", 200): (-4000, -1000, 60400, 43000)},
             is_ambiguous=True
         )
 
@@ -178,6 +179,8 @@ class TestMainWindowFormatClarification(unittest.TestCase):
 
         self.assertEqual(frame.paper_format, "A4")
         self.assertEqual(frame.scale, 200)
+        self.assertEqual(frame.min_point, (-4000, -1000, 0))
+        self.assertEqual(frame.max_point, (60400, 43000, 0))
         self.assertFalse(frame.is_ambiguous)
         self.assertTrue(frame.user_override)
 

@@ -329,9 +329,11 @@ class Frame:
     building_name: str = ""                 # Наименование здания / сооружения (графа 3)
     layout_name: str = "Model"              # Имя вкладки пространства листа ("Model", "Лист1", "Layout1" и т.д.)
     fallback_warning: str = ""              # Предупреждение о резервном формате / нестыковках бумаги
-    scale: int = 1                          # Масштаб чертежа (100 для 1:100)
+    scale: float = 1                        # Масштаб чертежа (100 для 1:100)
     format_reason: str = ""                 # Основание выбора формата ("Имя блока", "Геометрия М1:100", "Вручную")
-    possible_formats: List[Tuple[str, int]] = field(default_factory=list) # Альтернативы [(format, scale)]
+    possible_formats: List[Tuple[str, float]] = field(default_factory=list) # Альтернативы [(format, scale)]
     is_ambiguous: bool = False              # Флаг неоднозначности формата
     user_override: bool = False             # Флаг ручного изменения пользователем
+    format_candidate_bounds: dict[Tuple[str, float], Tuple[float, float, float, float]] = field(default_factory=dict)
+    format_from_source: bool = False        # Явный формат бумаги из свойств рамки
 

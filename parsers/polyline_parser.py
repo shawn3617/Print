@@ -5,6 +5,7 @@ import pythoncom
 import win32com.client
 
 from core.models import Frame, detect_paper_format, detect_paper_format_detailed, ALL_FORMATS, natural_sheet_sort_key
+from core.autocad_connector import _retry_busy
 from core.logger import log_warn, log_error
 from parsers.base_parser import BaseParser
 
@@ -78,7 +79,7 @@ def match_candidates(w: float, h: float) -> List[dict]:
                 err = abs(nice - sc) / nice
                 if err > 0.004:                     # масштаб «некруглый»
                     continue
-                res.append({"kind": kind, "format": fmt, "scale": float(nice),
+                res.append({"kind": kind, "format": fmt, "scale": nice,
                             "orientation": orient, "err": err})
     return res
 
@@ -122,7 +123,7 @@ def choose_candidate(bb, cands, all_bboxes, texts, ltscale=None):
     4) иначе — наименьшая погрешность."""
     if not cands:
         return None
-    def key(c):
+    def evidence(c):
         s = c["scale"]
         exp = _expected_other(bb, c)
         tol = 1.0 * s  # 1 мм на листе
@@ -130,11 +131,26 @@ def choose_candidate(bb, cands, all_bboxes, texts, ltscale=None):
         return (
             1 if paired else 0,
             _label_score(_anchor(bb, c), s, texts),
-            1 if (ltscale and abs(ltscale - s) / s < 0.01) else 0,
-            1 if c["kind"] == "outer" else 0,
-            -c["err"],
+            1 if (ltscale and ltscale != 1 and abs(ltscale - s) / s < 0.01) else 0,
         )
-    return max(cands, key=key)
+
+    ranked = [(evidence(c), c) for c in cands]
+    signals, best = max(ranked, key=lambda pair: (
+        pair[0], pair[1]["kind"] == "outer", -pair[1]["err"]
+    ))
+    reason = next((label for score, label in zip(signals, (
+        "Парная полилиния по полям рамки",
+        "Расположение заголовков штампа",
+        "Масштаб типа линий",
+    )) if score), "Геометрия рамки")
+    candidates = {}
+    for candidate in [best] + [c for score, c in ranked if score == signals and c is not best]:
+        option = (candidate["format"], candidate["scale"])
+        bounds = bb if candidate["kind"] == "outer" else _expected_other(bb, candidate)
+        candidates.setdefault(option, bounds)
+    if len(candidates) > 1:
+        reason += " — подходят несколько форматов или масштабов"
+    return {**best, "candidate_bounds": candidates, "reason": reason}
 
 
 def _inside(inner, outer, tol: float) -> bool:
@@ -201,7 +217,8 @@ def analyze(polys: List[dict], texts: List[Tuple[float, float, str]]) -> List[di
         # Есть только внутренняя рамка — печатаем по внешней границе листа
         frame_bb = bb if m["kind"] == "outer" else _expected_other(bb, m)
         frames.append({"bbox": frame_bb, "w": frame_bb[2] - frame_bb[0], "scale": s, "format": m["format"],
-                       "anchor": anchor, "anchor_from_inner": m["kind"] == "inner", "ref": it["p"]["ref"]})
+                       "anchor": anchor, "anchor_from_inner": m["kind"] == "inner", "ref": it["p"]["ref"],
+                       "candidate_bounds": m["candidate_bounds"], "format_reason": m["reason"]})
 
     for f in frames:
         (
@@ -454,6 +471,11 @@ class PolylineParser(BaseParser):
                 except Exception:
                     continue
 
+        try:
+            default_lts = float(_retry_busy(lambda: doc.GetVariable("CELTSCALE")))
+        except (AttributeError, TypeError, ValueError, pythoncom.com_error):
+            default_lts = None
+
         polys = []
         texts = []  # (x_центра, y_центра, текст) — габариты текста считаем один раз
         for obj in objs:
@@ -462,10 +484,12 @@ class PolylineParser(BaseParser):
                 if 'Polyline' in ent_name:
                     mn, mx = obj.GetBoundingBox()
                     try:
-                        lts = float(obj.LinetypeScale)
+                        lts = float(_retry_busy(lambda: obj.LinetypeScale))
                     except Exception:
                         lts = None
-                    polys.append({"bbox": (mn[0], mn[1], mx[0], mx[1]), "ref": obj, "ltscale": lts})
+                    # Значение CELTSCALE наследуют новые объекты, даже если масштаб рамки другой.
+                    polys.append({"bbox": (mn[0], mn[1], mx[0], mx[1]), "ref": obj,
+                                  "ltscale": lts if default_lts is not None and lts != default_lts else None})
                 elif ent_name in ('AcDbText', 'AcDbMText'):
                     val = _clean_text(getattr(obj, 'TextString', ''))
                     if val:
@@ -482,8 +506,17 @@ class PolylineParser(BaseParser):
                 poly = f["ref"]
                 w_poly = abs(x2 - x1)
                 h_poly = abs(y2 - y1)
-                det_res = detect_paper_format_detailed(w_poly, h_poly, scale=f.get("scale"))
-                fmt = f.get("format") or det_res.paper_format
+                bounds = f.get("candidate_bounds", {})
+                if bounds:
+                    fmt, scale = f["format"], f["scale"]
+                    possible_formats = list(bounds)
+                    reason = f["format_reason"]
+                    ambiguous = len(bounds) > 1
+                else:
+                    det_res = detect_paper_format_detailed(w_poly, h_poly, scale=f.get("scale"))
+                    fmt, scale = det_res.paper_format, det_res.scale
+                    possible_formats = [(c.paper_format, c.scale) for c in det_res.candidates]
+                    reason, ambiguous = det_res.reason, det_res.is_ambiguous
                 frame = Frame(
                     object_id=getattr(poly, 'ObjectID', 0),
                     sheet_number=f["sheet_number"],
@@ -496,10 +529,11 @@ class PolylineParser(BaseParser):
                     doc_code=f.get("doc_code", ""),
                     object_name=f.get("object_name", ""),
                     building_name=f.get("building_name", ""),
-                    scale=det_res.scale,
-                    format_reason=det_res.reason,
-                    possible_formats=[(c.paper_format, c.scale) for c in det_res.candidates],
-                    is_ambiguous=det_res.is_ambiguous
+                    scale=scale,
+                    format_reason=reason,
+                    possible_formats=possible_formats,
+                    is_ambiguous=ambiguous,
+                    format_candidate_bounds=bounds,
                 )
                 frame._debug_texts = f["texts"]
                 frames.append(frame)

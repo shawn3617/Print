@@ -3,6 +3,30 @@ from parsers.polyline_parser import analyze
 from core.models import Frame, frame_natural_sort_key
 
 class TestPolylineLogic(unittest.TestCase):
+    def test_identical_outer_sizes_use_each_frames_own_evidence(self):
+        polys = [
+            {"bbox": (0, 0, 59400, 42000), "ref": "A2"},
+            {"bbox": (2000, 500, 58900, 41500), "ref": None},
+            {"bbox": (70000, 0, 129400, 42000), "ref": "A4"},
+            {"bbox": (74000, 1000, 128400, 41000), "ref": None},
+            {"bbox": (140000, 0, 199400, 42000), "ref": "unknown", "ltscale": 1},
+        ]
+        by_ref = {f["ref"]: f for f in analyze(polys, [])}
+        self.assertEqual(set(by_ref), {"A2", "A4", "unknown"})
+        self.assertEqual(list(by_ref["A2"]["candidate_bounds"]), [("A2", 100)])
+        self.assertEqual(list(by_ref["A4"]["candidate_bounds"]), [("A4", 200)])
+        options = by_ref["unknown"]["candidate_bounds"]
+        self.assertIn(("A2", 100), options)
+        self.assertIn(("A4", 200), options)
+        self.assertEqual(options[("A4", 200)], polys[-1]["bbox"])
+
+    def test_stamp_position_takes_precedence_over_linetype_scale(self):
+        poly = {"bbox": (0, 0, 59400, 42000), "ref": None, "ltscale": 100}
+        texts = [(58400 - 27.5 * 200, 1000 + 27.5 * 200, "Лист")]
+        frame, = analyze([poly], texts)
+        self.assertEqual(list(frame["candidate_bounds"]), [("A4", 200)])
+        self.assertEqual(frame["format_reason"], "Расположение заголовков штампа")
+
     def test_form_4_detection(self):
         # Рамка A4 (масштаб 1:100, внешняя 21000x29700, внутренняя 18500x28700)
         polys = [
