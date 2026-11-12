@@ -11,6 +11,7 @@ import os
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.config_manager import ConfigManager
+from core.models import DEFAULT_POLYLINE_LAYER
 
 DEFAULT_PROFILE_NAME: str = "По умолчанию"
 
@@ -26,6 +27,7 @@ PROFILE_KEYS: List[str] = [
     "source_mode",
     "frame_type",
     "custom_block_name",
+    "polyline_layer",
 ]
 
 BUILTIN_PROFILES: Dict[str, Dict[str, Any]] = {
@@ -143,6 +145,7 @@ class ProfileManager:
             base = copy.deepcopy(self.BUILTIN_PROFILES[name])
         else:
             base = copy.deepcopy(self.BUILTIN_PROFILES[self.DEFAULT_PROFILE_NAME])
+        base.setdefault("polyline_layer", DEFAULT_POLYLINE_LAYER)
 
         # Если есть пользовательские настройки для этого профиля, накладываем их
         if name in self.profiles and isinstance(self.profiles[name], dict):

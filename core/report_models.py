@@ -118,6 +118,7 @@ class ScanFileResult:
     success: bool
     error: str = ""
     frames_count: int = 0
+    warnings: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -131,6 +132,10 @@ class ScanReport:
     cancelled: bool = False
     timestamp: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     file_results: List[ScanFileResult] = field(default_factory=list)
+
+    @property
+    def has_warnings(self) -> bool:
+        return any(result.warnings for result in self.file_results)
 
     def build_text_report(self) -> str:
         lines = []
@@ -155,5 +160,6 @@ class ScanReport:
             else:
                 status = f"[✗] Ошибка: {fr.error}"
             lines.append(f"{idx:02d}. {status} — {fr.file_name} ({fr.file_path})")
+            lines.extend(f"    {warning}" for warning in fr.warnings)
         lines.append("=" * 80)
         return "\n".join(lines)

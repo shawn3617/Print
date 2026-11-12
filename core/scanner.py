@@ -1,5 +1,7 @@
+from fnmatch import fnmatchcase
 from typing import List
-from core.models import Frame, natural_sheet_sort_key, frame_natural_sort_key
+from core.autocad_connector import _retry_busy
+from core.models import DEFAULT_POLYLINE_LAYER, Frame, natural_sheet_sort_key, frame_natural_sort_key
 from core.logger import log_info, log_warn, log_error
 from core.report_models import ScanReport, ScanFileResult
 from core.autocad_state import AutoCADStateGuard
@@ -24,44 +26,73 @@ class DocumentScanner:
         self.parsers = [
             SPDSParser(),
             BlockParser(),
-            PolylineParser(target_layer="0000_Формат")
+            PolylineParser()
         ]
         self.last_scan_report = None
+        self.last_scan_warnings: List[str] = []
 
-    def get_parsers_for_mode(self, frame_type: str = "all", custom_block_name: str = "") -> list:
+    @staticmethod
+    def _custom_block_queries(text: str) -> dict[str, list[str]]:
+        queries = {}
+        for entry in (text or "").replace(";", ",").split(","):
+            name = entry.strip()
+            if name:
+                queries[name] = [name] if "*" in name or "?" in name else [name, f"*{name}*"]
+        return queries
+
+    def _check_block_queries(self, parser, custom_block_name: str, space: str):
+        if not isinstance(parser, BlockParser) or parser.matched_block_names is None:
+            return
+        names = [
+            name.lower() for layout, name in parser.matched_block_names
+            if space not in ("model", "layouts") or (layout.lower() == "model") == (space == "model")
+        ]
+        queries = self._custom_block_queries(custom_block_name)
+        if len(queries) == 1 and names:
+            return  # Один запрос уже подтверждён самим экспортёром AutoCAD.
+        missing = [
+            query for query, masks in queries.items()
+            if not any(fnmatchcase(name, mask.lower()) for name in names for mask in masks)
+        ]
+        if missing:
+            self.last_scan_warnings.append(f"Не найдены рамки по именам или маскам блоков: {', '.join(missing)}.")
+
+    def get_parsers_for_mode(self, frame_type: str = "all", custom_block_name: str = "",
+                             polyline_layer: str = DEFAULT_POLYLINE_LAYER) -> list:
         """Возвращает список парсеров, соответствующих выбранному режиму поиска рамок."""
         if frame_type == FRAME_TYPE_SPDS:
             return [SPDSParser()]
         elif frame_type == FRAME_TYPE_ALL_BLOCKS:
             return [BlockParser()]
         elif frame_type == FRAME_TYPE_CUSTOM_BLOCK:
-            if custom_block_name and custom_block_name.strip():
-                raw_names = [n.strip() for n in custom_block_name.replace(";", ",").split(",") if n.strip()]
-                masks = []
-                for n in raw_names:
-                    masks.append(n)
-                    if "*" not in n and "?" not in n:
-                        masks.append(f"*{n}*")
-                return [BlockParser(block_names=masks)]
-            else:
-                return [BlockParser()]
+            queries = self._custom_block_queries(custom_block_name)
+            return [BlockParser(block_names=[mask for masks in queries.values() for mask in masks])]
         elif frame_type == FRAME_TYPE_POLYLINE:
-            return [PolylineParser(target_layer="0000_Формат")]
+            return [PolylineParser(target_layer=polyline_layer)]
         else:  # FRAME_TYPE_ALL или по умолчанию
             return [
                 SPDSParser(),
                 BlockParser(),
-                PolylineParser(target_layer="0000_Формат")
+                PolylineParser(target_layer=polyline_layer)
             ]
 
-    def scan_document(self, doc, frame_type: str = "all", custom_block_name: str = "", space: str = "model") -> List[Frame]:
+    def scan_document(self, doc, frame_type: str = "all", custom_block_name: str = "", space: str = "model",
+                      *, polyline_layer: str = DEFAULT_POLYLINE_LAYER) -> List[Frame]:
         import time
+        self.last_scan_warnings = []
         all_frames: List[Frame] = []
-        active_parsers = self.get_parsers_for_mode(frame_type, custom_block_name)
+        active_parsers = self.get_parsers_for_mode(frame_type, custom_block_name, polyline_layer)
         for parser in active_parsers:
             try:
                 t_p0 = time.perf_counter()
                 frames = parser.find_frames(doc)
+                if isinstance(parser, PolylineParser) and parser.missing_layers and (
+                    frame_type == FRAME_TYPE_POLYLINE
+                    or set(parser.target_layer_names) != {DEFAULT_POLYLINE_LAYER.lower()}
+                ):
+                    self.last_scan_warnings.append(f"Не найдены слои: {', '.join(parser.missing_layers)}.")
+                if frame_type == FRAME_TYPE_CUSTOM_BLOCK:
+                    self._check_block_queries(parser, custom_block_name, space)
                 dt_p = time.perf_counter() - t_p0
                 msg = f"[{parser.__class__.__name__}] завершен за {dt_p:.3f} сек (найдено {len(frames)} рамок)"
                 print(msg)
@@ -173,6 +204,7 @@ class DocumentScanner:
         """
         import re
         from core.models import detect_format_from_media_name
+        self.last_scan_warnings = []
         
         doc_path = ""
         doc_name = ""
@@ -206,6 +238,8 @@ class DocumentScanner:
             for parser in paper_parsers:
                 try:
                     frames = parser.find_frames(doc)
+                    if frame_type == FRAME_TYPE_CUSTOM_BLOCK:
+                        self._check_block_queries(parser, custom_block_name, "layouts")
                     if frames:
                         for f in frames:
                             lyt_n = getattr(f, "layout_name", "Model")
@@ -236,6 +270,11 @@ class DocumentScanner:
         # 3. Сопоставляем вкладки и рамки
         result_frames = []
         handled_layout_keys = set()
+        try:
+            model_is_empty = _retry_busy(lambda: doc.ModelSpace.Count) == 0
+        except Exception as e:
+            model_is_empty = False
+            log_warn("Не удалось проверить содержимое модели", exc=e, module="Scanner")
 
         for tab_order, lyt_name, lyt_obj in layouts_info:
             lyt_key = lyt_name.lower()
@@ -279,7 +318,8 @@ class DocumentScanner:
                     handle=handle,
                     dwg_path=doc_path,
                     dwg_name=doc_name,
-                    layout_name=lyt_name
+                    layout_name=lyt_name,
+                    is_empty_layout=model_is_empty and self._layout_has_only_viewports(lyt_obj),
                 )
                 result_frames.append(fallback_frame)
 
@@ -295,6 +335,18 @@ class DocumentScanner:
 
         return result_frames
 
+    @staticmethod
+    def _layout_has_only_viewports(layout) -> bool:
+        def check_objects():
+            block = layout.Block
+            return all(block.Item(i).ObjectName == "AcDbViewport" for i in range(block.Count))
+
+        try:
+            return _retry_busy(check_objects)
+        except Exception as e:
+            log_warn("Не удалось проверить содержимое листа", exc=e, module="Scanner")
+            return False
+
     def scan_files(
         self,
         connector,
@@ -303,7 +355,9 @@ class DocumentScanner:
         frame_type: str = "all",
         custom_block_name: str = "",
         progress_callback=None,
-        is_cancelled=None
+        is_cancelled=None,
+        *,
+        polyline_layer: str = DEFAULT_POLYLINE_LAYER,
     ) -> List[Frame]:
         """
         Пакетное сканирование нескольких DWG-файлов.
@@ -358,6 +412,7 @@ class DocumentScanner:
                 file_success = False
                 file_error = ""
                 file_frames_count = 0
+                self.last_scan_warnings = []
                 try:
                     doc, was_opened = connector.open_document(abs_path, read_only=True)
                     state_guard.register_doc(doc)
@@ -369,7 +424,10 @@ class DocumentScanner:
                     if is_layouts:
                         doc_frames = self.scan_layouts(doc, frame_type=frame_type, custom_block_name=custom_block_name)
                     else:
-                        doc_frames = self.scan_document(doc, frame_type=frame_type, custom_block_name=custom_block_name, space="model")
+                        doc_frames = self.scan_document(
+                            doc, frame_type=frame_type, custom_block_name=custom_block_name,
+                            space="model", polyline_layer=polyline_layer,
+                        )
                         
                     for fr in doc_frames:
                         if not fr.dwg_path:
@@ -391,7 +449,8 @@ class DocumentScanner:
                             file_path=abs_path,
                             file_name=fname,
                             success=True,
-                            frames_count=file_frames_count
+                            frames_count=file_frames_count,
+                            warnings=self.last_scan_warnings.copy(),
                         ))
                         scan_report.success_files_count += 1
                         if file_frames_count == 0:

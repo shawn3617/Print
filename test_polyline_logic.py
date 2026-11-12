@@ -1,8 +1,50 @@
 import unittest
-from parsers.polyline_parser import analyze
+from unittest.mock import MagicMock, patch
+
+import pythoncom
+
+from parsers.polyline_parser import PolylineParser, analyze
 from core.models import Frame, frame_natural_sort_key
 
 class TestPolylineLogic(unittest.TestCase):
+    def test_multiple_layers_are_matched_exactly_when_using_model_space(self):
+        doc = MagicMock()
+        names = ["Рамки.АР", "Рамки КЖ", "Рамки-АР"]
+        doc.Layers.Count = len(names)
+        doc.Layers.Item.side_effect = [MagicMock(Name=name) for name in names]
+        objects = []
+        for index, name in enumerate(names):
+            polyline = MagicMock(EntityName="AcDbPolyline", Layer=name, Handle=str(index))
+            x = index * 800
+            polyline.GetBoundingBox.return_value = ((x, 0, 0), (x + 420, 297, 0))
+            objects.append(polyline)
+        doc.ModelSpace.Count = len(objects)
+        doc.ModelSpace.Item.side_effect = objects
+        parser = PolylineParser(target_layer=" рамки.ар, Рамки КЖ, РАМКИ.АР, отсутствует ")
+        with patch.object(parser, "_select_on_layers", return_value=None) as select:
+            frames = parser.find_frames(doc)
+
+        select.assert_called_once_with(doc, ["Рамки.АР", "Рамки КЖ"])
+        self.assertEqual({frame.handle for frame in frames}, {"0", "1"})
+        self.assertEqual(parser.missing_layers, ["отсутствует"])
+
+    def test_busy_autocad_does_not_drop_polyline(self):
+        doc = MagicMock()
+        doc.Layers.Count = 1
+        doc.Layers.Item.return_value.Name = "0000_Формат"
+        doc.GetVariable.return_value = 1
+        polyline = MagicMock(EntityName="AcDbPolyline", ObjectID=42, Handle="2A", LinetypeScale=1)
+        polyline.GetBoundingBox.side_effect = [
+            pythoncom.com_error(-2147418111, "Call rejected", None, None),
+            ((0, 0, 0), (59400, 42000, 0)),
+        ]
+        parser = PolylineParser()
+        with patch.object(parser, "_select_on_layers", return_value=[polyline]), patch("core.autocad_connector.time.sleep"):
+            frame, = parser.find_frames(doc)
+
+        self.assertEqual(frame.handle, "2A")
+        self.assertEqual(polyline.GetBoundingBox.call_count, 2)
+
     def test_identical_outer_sizes_use_each_frames_own_evidence(self):
         polys = [
             {"bbox": (0, 0, 59400, 42000), "ref": "A2"},

@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QPushButton, QComboBox,
     QLabel, QHeaderView, QCheckBox, QGroupBox, QFormLayout,
     QMessageBox, QFileDialog, QAbstractItemView, QDialog, QProgressBar,
-    QLineEdit, QSizePolicy, QListView, QFrame, QMenu, QInputDialog
+    QLineEdit, QSizePolicy, QListView, QFrame, QMenu, QInputDialog, QStyle
 )
 from PySide6.QtCore import QByteArray, Qt, Signal, QMimeData, QTimer
 from PySide6.QtGui import QDrag, QAction, QGuiApplication, QShortcut, QKeySequence, QIcon
@@ -21,7 +21,7 @@ from core.autocad_connector import AutoCADConnector
 from core.scanner import DocumentScanner
 from core.printer import BatchPrinter, PrintCancelledError
 from core.config_manager import ConfigManager
-from core.models import natural_sheet_sort_key, frame_natural_sort_key, ALL_FORMATS
+from core.models import DEFAULT_POLYLINE_LAYER, natural_sheet_sort_key, frame_natural_sort_key, ALL_FORMATS
 from core.exporter import SheetExporter
 from core.resource_utils import get_resource_path
 from core.logger import init_logging, log_info, log_warn, log_error
@@ -593,7 +593,7 @@ class PrintManagerUI(QMainWindow):
         self.combo_papers = PrintSettingComboBox()
         fallback_label = QLabel("Резервный:")
         fallback_label.setToolTip("Используется, если плоттер не поддерживает размер бумаги для рамки")
-        self.combo_papers.currentTextChanged.connect(lambda _: self.save_settings())
+        self.combo_papers.currentTextChanged.connect(self.on_fallback_paper_changed)
         form_layout.addRow(fallback_label, self.combo_papers)
         
         self.combo_style = QComboBox()
@@ -653,7 +653,7 @@ class PrintManagerUI(QMainWindow):
         self.combo_frame_type.addItem("Рамки СПДС", "spds")
         self.combo_frame_type.addItem("Любые блоки", "all_blocks")
         self.combo_frame_type.addItem("Конкретный блок...", "custom_block")
-        self.combo_frame_type.addItem("Полилинии (0000_Формат)", "polyline")
+        self.combo_frame_type.addItem("Полилинии", "polyline")
         self.combo_frame_type.addItem("Все типы сразу", "all")
         self.combo_frame_type.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.combo_frame_type.setMinimumContentsLength(8)
@@ -666,6 +666,17 @@ class PrintManagerUI(QMainWindow):
         self.edit_block_name.textChanged.connect(lambda _: self.save_settings())
         self.edit_block_name.setVisible(False)
         frames_form.addWidget(self.edit_block_name)
+
+        self.polyline_layer_row = QWidget()
+        layer_form = QFormLayout(self.polyline_layer_row)
+        layer_form.setContentsMargins(0, 0, 0, 0)
+        self.edit_polyline_layer = QLineEdit(DEFAULT_POLYLINE_LAYER)
+        self.edit_polyline_layer.setPlaceholderText(DEFAULT_POLYLINE_LAYER)
+        self.edit_polyline_layer.setToolTip("Введите имена слоёв через запятую, например Рамки АР, Рамки КЖ")
+        self.edit_polyline_layer.editingFinished.connect(self.save_settings)
+        layer_form.addRow("Слои рамок", self.edit_polyline_layer)
+        self.polyline_layer_row.hide()
+        frames_form.addWidget(self.polyline_layer_row)
 
         self.lbl_frame_type_warning = QLabel(
             "⚠️ Поиск по всем типам рамок (СПДС + блоки + полилинии) занимает больше времени при пакетной обработке."
@@ -833,6 +844,9 @@ class PrintManagerUI(QMainWindow):
         saved_custom_block = cfg.get("custom_block_name", "")
         if hasattr(self, "edit_block_name") and isinstance(saved_custom_block, str):
             self.edit_block_name.setText(saved_custom_block)
+        saved_layer = cfg.get("polyline_layer", DEFAULT_POLYLINE_LAYER)
+        if isinstance(saved_layer, str):
+            self.edit_polyline_layer.setText(saved_layer)
 
         saved_template = cfg.get("filename_template", "Лист {Номер} - {Наименование}")
         if hasattr(self, "combo_template") and isinstance(saved_template, str) and saved_template:
@@ -864,7 +878,13 @@ class PrintManagerUI(QMainWindow):
             self.edit_block_name.setVisible(mode == "custom_block")
         if hasattr(self, "lbl_frame_type_warning"):
             self.lbl_frame_type_warning.setVisible(mode == "all")
+        self.polyline_layer_row.setVisible(
+            mode in ("polyline", "all") and self.combo_source.currentIndex() == 0
+        )
         self.save_settings()
+
+    def selected_polyline_layer(self) -> str:
+        return self.edit_polyline_layer.text().strip() or DEFAULT_POLYLINE_LAYER
 
     def on_theme_changed(self, index: int):
         if getattr(self, "_is_loading_config", False):
@@ -901,11 +921,21 @@ class PrintManagerUI(QMainWindow):
             self.btn_scan.setText("Загрузить листы")
         else:
             self.btn_scan.setText("Найти рамки")
-        self.save_settings()
+        if hasattr(self, "combo_frame_type"):
+            self.on_frame_type_changed(self.combo_frame_type.currentIndex())
 
     def on_printer_changed(self, printer_name: str):
         self.update_paper_sizes(printer_name)
         self.save_settings()
+
+    def on_fallback_paper_changed(self):
+        self._reset_paper_warnings()
+        self.save_settings()
+
+    def _reset_paper_warnings(self):
+        for frame in self.frames:
+            frame.fallback_warning = ""
+        self._refresh_table_formats()
 
     def on_mode_changed(self, text: str = ""):
         self.update_template_preview()
@@ -1017,6 +1047,8 @@ class PrintManagerUI(QMainWindow):
             custom_block = settings.get("custom_block_name", "")
             if hasattr(self, "edit_block_name"):
                 self.edit_block_name.setText(custom_block or "")
+            saved_layer = settings.get("polyline_layer", DEFAULT_POLYLINE_LAYER)
+            self.edit_polyline_layer.setText(saved_layer if isinstance(saved_layer, str) else DEFAULT_POLYLINE_LAYER)
         finally:
             self._is_loading_config = False
 
@@ -1037,6 +1069,7 @@ class PrintManagerUI(QMainWindow):
             "source_mode": self.combo_source.currentText() if hasattr(self, "combo_source") else "Модель (Model Space)",
             "frame_type": self.combo_frame_type.currentData() if hasattr(self, "combo_frame_type") else "spds",
             "custom_block_name": self.edit_block_name.text() if hasattr(self, "edit_block_name") else "",
+            "polyline_layer": self.selected_polyline_layer(),
         }
 
     def on_save_current_profile(self):
@@ -1221,6 +1254,7 @@ class PrintManagerUI(QMainWindow):
             "source_mode": source_text if source_text else current_cfg.get("source_mode", "Модель (Model Space)"),
             "frame_type": frame_type_val if frame_type_val else current_cfg.get("frame_type", "spds"),
             "custom_block_name": custom_block_val,
+            "polyline_layer": self.selected_polyline_layer(),
             "theme": theme_val if theme_val else current_cfg.get("theme", "dark_catppuccin"),
             "hidden_columns": hidden_cols,
             "settings_collapsed": self.btn_toggle_settings.isChecked(),
@@ -1371,6 +1405,7 @@ class PrintManagerUI(QMainWindow):
                 source_mode=source_mode,
                 frame_type=frame_type,
                 custom_block_name=custom_block,
+                polyline_layer=self.selected_polyline_layer(),
                 progress_callback=on_scan_progress,
                 is_cancelled=is_cancelled
             )
@@ -1389,7 +1424,7 @@ class PrintManagerUI(QMainWindow):
                 return
 
             if not new_frames:
-                if scan_rep and scan_rep.failed_files_count > 0:
+                if scan_rep and (scan_rep.failed_files_count > 0 or scan_rep.has_warnings):
                     dlg = ReportDialog(scan_rep, current_theme_id=getattr(self, "current_theme", "dark_catppuccin"), parent=self)
                     dlg.repeat_scan_requested.connect(self.process_batch_dwg_files)
                     dlg.exec()
@@ -1422,7 +1457,8 @@ class PrintManagerUI(QMainWindow):
             self.update_format_filter_items()
             self.apply_filter()
 
-            if scan_rep and (scan_rep.failed_files_count > 0 or scan_rep.empty_files_count > 0 or scan_rep.cancelled):
+            if scan_rep and (scan_rep.failed_files_count > 0 or scan_rep.empty_files_count > 0
+                             or scan_rep.cancelled or scan_rep.has_warnings):
                 dlg = ReportDialog(scan_rep, current_theme_id=getattr(self, "current_theme", "dark_catppuccin"), parent=self)
                 dlg.repeat_scan_requested.connect(self.process_batch_dwg_files)
                 dlg.exec()
@@ -1461,6 +1497,9 @@ class PrintManagerUI(QMainWindow):
         except Exception as e:
             self.lbl_document.setText("Ошибка подключения")
             self.lbl_document.setStyleSheet(f"color: {err_col}; font-weight: bold;")
+            if self.printer:
+                self.printer.available_paper_formats = None
+            self._reset_paper_warnings()
 
             
     def load_printer_settings(self):
@@ -1536,9 +1575,15 @@ class PrintManagerUI(QMainWindow):
             self.paper_dict = {paper: paper_sys} if paper else {}
         finally:
             self._is_loading_config = was_loading
+        self._reset_paper_warnings()
 
     def update_paper_sizes(self, printer_name: str):
-        if not self.printer or not printer_name: return
+        if not self.printer:
+            return
+        if not printer_name:
+            self.printer.available_paper_formats = None
+            self._reset_paper_warnings()
+            return
         self.paper_dict = self.printer.get_media_names(printer_name)
         
         self.combo_papers.blockSignals(True)
@@ -1610,6 +1655,7 @@ class PrintManagerUI(QMainWindow):
             if chosen_idx >= 0:
                 self.combo_papers.setCurrentIndex(chosen_idx)
         self.combo_papers.blockSignals(False)
+        self._reset_paper_warnings()
                 
     def scan_frames(self):
         try:
@@ -1631,7 +1677,8 @@ class PrintManagerUI(QMainWindow):
                     self.connector.doc,
                     frame_type=frame_type,
                     custom_block_name=custom_block,
-                    space="model"
+                    space="model",
+                    polyline_layer=self.selected_polyline_layer(),
                 )
             
             # Обновляем таблицу
@@ -1657,7 +1704,11 @@ class PrintManagerUI(QMainWindow):
             self.update_format_filter_items()
             self.apply_filter()
             
-            if not self.frames:
+            warnings = self.scanner.last_scan_warnings
+            if warnings:
+                summary = f"Найдено рамок или листов: {len(self.frames)}."
+                QMessageBox.warning(self, "Результат поиска", "\n".join([summary, *warnings]))
+            elif not self.frames:
                 msg = "Вкладки листов (Layouts) не найдены!" if is_layouts_mode else "Рамки не найдены!"
                 QMessageBox.information(self, "Результат", msg)
                 
@@ -1739,6 +1790,12 @@ class PrintManagerUI(QMainWindow):
 
         f_obj = frame if frame else (self.frames[row] if row < len(self.frames) else None)
         if f_obj:
+            if f_obj.is_empty_layout:
+                item_name.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning))
+                item_name.setToolTip(
+                    f"{name}\n\nПустой лист: в модели нет объектов, а на листе нет содержимого "
+                    "кроме возможных границ видовых экранов."
+                )
             self._update_format_item(row, f_obj)
         elif fallback_warning:
             item_fmt.setText(f"⚠️ {paper_format}")
@@ -1794,6 +1851,18 @@ class PrintManagerUI(QMainWindow):
                 f"Формат: {fmt_display}{scale_str}\n"
                 f"Основание: {fmt_reason or 'Геометрия'}"
             )
+
+        media_map = getattr(self.printer, "available_paper_formats", None)
+        if not warn and isinstance(media_map, dict) and frame.paper_format not in media_map:
+            printer_name = self.combo_printers.currentText()
+            fallback = self.combo_papers.currentText() or media_map.get("A3") or media_map.get("A1")
+            details = f"У плоттера «{printer_name}» нет бумаги для формата {fmt_display}."
+            details += f" При печати будет использован резервный формат «{fallback}»." if fallback else (
+                " Выберите резервный формат или другой плоттер."
+            )
+            if not item.text().startswith("⚠"):
+                item.setText(f"⚠️ {item.text()}")
+            item.setToolTip(f"{details}\n\n{item.toolTip()}")
 
     def _refresh_table_formats(self):
         """Обновляет колонку форматов с индикацией предупреждений о резервном формате и неоднозначности."""

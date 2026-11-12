@@ -324,7 +324,7 @@ class ReportDialog(QDialog):
             icon_lbl.setText("⏹️")
             lbl_title.setText("Сканирование остановлено пользователем")
             lbl_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #f9e2af;")
-        elif rep.failed_files_count > 0:
+        elif rep.failed_files_count > 0 or rep.has_warnings:
             icon_lbl.setText("⚠️")
             lbl_title.setText("Сканирование завершено с предупреждениями")
             lbl_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #f9e2af;")
@@ -344,7 +344,7 @@ class ReportDialog(QDialog):
         stats_layout.addStretch()
 
         self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["Статус", "Файл чертежа", "Рамок найдено", "Путь к файлу / Ошибка"])
+        self.table.setHorizontalHeaderLabels(["Статус", "Файл чертежа", "Рамок найдено", "Подробности"])
         self.table.setRowCount(len(rep.file_results))
 
         for row, fr in enumerate(rep.file_results):
@@ -355,7 +355,11 @@ class ReportDialog(QDialog):
             elif fr.frames_count == 0:
                 st_text = "⚠️ Рамки не найдены"
                 st_color = "#f9e2af"
-                detail = fr.file_path
+                detail = " ".join(fr.warnings) or fr.file_path
+            elif fr.warnings:
+                st_text = "⚠️ Есть замечания"
+                st_color = "#f9e2af"
+                detail = " ".join(fr.warnings)
             else:
                 st_text = "✓ Успешно"
                 st_color = "#a6e3a1"
@@ -372,7 +376,7 @@ class ReportDialog(QDialog):
             item_cnt.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
             item_det = QTableWidgetItem(detail)
-            item_det.setToolTip(detail)
+            item_det.setToolTip(f"{detail}\n\n{fr.file_path}" if fr.warnings else detail)
 
             for col_idx, item in enumerate((item_st, item_name, item_cnt, item_det)):
                 item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)

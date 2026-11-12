@@ -2,7 +2,7 @@ import os
 import time
 import re
 import fnmatch
-from typing import List, Any
+from typing import Any, List, Optional, Tuple
 from core.models import Frame, ALL_FORMATS, detect_paper_format, detect_paper_format_detailed
 from parsers.base_parser import BaseParser
 from core.resource_utils import get_resource_path, get_lisp_path
@@ -75,6 +75,7 @@ class BlockParser(BaseParser):
         """
         raw_names = block_names or DEFAULT_BLOCK_NAMES
         self.block_names = [name.lower() for name in raw_names]
+        self.matched_block_names: Optional[List[Tuple[str, str]]] = None
         self.sheet_attr_tags = [tag.upper() for tag in (sheet_attr_tags or DEFAULT_SHEET_TAGS)]
         self.title_attr_tags = [tag.upper() for tag in (title_attr_tags or DEFAULT_TITLE_TAGS)]
         self.shifr_attr_tags = [tag.upper() for tag in (shifr_attr_tags or DEFAULT_SHIFR_TAGS)]
@@ -285,6 +286,9 @@ class BlockParser(BaseParser):
             [patterns_str, ",".join(self.sheet_attr_tags), ",".join(self.title_attr_tags)],
             prefix="acad_blocks")
         frames = self._convert_items_to_frames(data)
+        self.matched_block_names = [
+            (item.get("layout") or "Model", item.get("block_name") or "") for item in data
+        ]
         print(f"[BlockParser] LISP экспорт выполнен за {time.perf_counter() - t_start:.3f} сек "
               f"(найдено {len(frames)} рамок)")
         return frames
@@ -671,6 +675,7 @@ class BlockParser(BaseParser):
         return frames
 
     def find_frames(self, doc: Any) -> List[Frame]:
+        self.matched_block_names = None
         # 1. Быстрая проверка наличия определений блоков в таблице Blocks (0.001 сек)
         if not self._has_block_definitions(doc):
             return []

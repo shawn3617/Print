@@ -66,6 +66,28 @@ class TestLayoutsSupport(unittest.TestCase):
         self.assertEqual(frames[1].paper_format, "A2")
         self.assertEqual(frames[1].source_type, "Layout")
 
+    def test_marks_empty_layout_only_if_model_is_empty(self):
+        doc = MagicMock()
+        doc.ModelSpace.Count = 0
+        doc.Layouts.Count = 3
+        blank = MagicMock(Name="Лист1", ModelType=False, TabOrder=1)
+        blank.Block.Count = 0
+        viewport = MagicMock(Name="Лист2", ModelType=False, TabOrder=2)
+        viewport.Block.Count = 1
+        viewport.Block.Item.return_value.ObjectName = "AcDbViewport"
+        drawing = MagicMock(Name="План", ModelType=False, TabOrder=3)
+        drawing.Block.Count = 1
+        drawing.Block.Item.return_value.ObjectName = "AcDbLine"
+        doc.Layouts.Item.side_effect = [blank, viewport, drawing] * 2
+        scanner = DocumentScanner()
+
+        frames = scanner.scan_layouts(doc, "polyline")
+        self.assertEqual([f.is_empty_layout for f in frames], [True, True, False])
+
+        doc.ModelSpace.Count = 1
+        frames = scanner.scan_layouts(doc, "polyline")
+        self.assertEqual([f.is_empty_layout for f in frames], [False, False, False])
+
     def test_printer_plots_layouts_with_acLayout(self):
         mock_doc = MagicMock()
         mock_active_layout = MagicMock()

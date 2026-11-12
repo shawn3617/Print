@@ -132,6 +132,7 @@ class BatchPrinter:
         self.connector = connector
         self._plotters_checked = False
         self.last_report = None
+        self.available_paper_formats = None
 
     def _ensure_plotters(self):
         """Один раз за запуск: свои плоттеры (папка plotters программы) -> в AutoCAD."""
@@ -159,16 +160,12 @@ class BatchPrinter:
 
     def get_media_names(self, printer_name: str):
         """Возвращает словарь {Локализованное_Имя: Системное_Имя} для выбранного плоттера"""
-        layout = self.doc.ModelSpace.Layout
+        self.available_paper_formats = None
         try:
-            layout.ConfigName = printer_name
-            layout.RefreshPlotDeviceInfo()
-            system_names = layout.GetCanonicalMediaNames()
-            result = {}
-            for sys_name in system_names:
-                local_name = layout.GetLocaleMediaName(sys_name)
-                result[local_name] = sys_name
-            return result
+            media_names = list(self._iter_media_names(printer_name))
+            if media_names:
+                self.available_paper_formats = self._map_media_names(media_names)
+            return dict(media_names)
         except Exception as e:
             _warn(f"не удалось получить форматы бумаги плоттера «{printer_name}», показан запасной", e)
             return {"ISO full bleed A2 (594.00 x 420.00 MM)": "ISO_full_bleed_A2_(594.00_x_420.00_MM)"}
@@ -216,51 +213,59 @@ class BatchPrinter:
         return name
 
     def _build_media_map(self, printer_name: str) -> dict:
-        """Строит словарь {формат (A0..A4, A3x5 и т.д.) -> canonical_media_name} для выбранного принтера."""
-        import re
-        from core.models import ALL_FORMATS
-        
-        result = {}
+        """Строит соответствие форматов ГОСТ бумаге выбранного плоттера."""
+        media_names = []
         try:
-            layout = _retry_busy(lambda: self.doc.ModelSpace.Layout)
-            self._apply_printer(layout, printer_name)
-            names = _retry_busy(layout.GetCanonicalMediaNames)
-            for sys_name in names:
-                local_name = _retry_busy(lambda s=sys_name: layout.GetLocaleMediaName(s))
-                
-                # Извлекаем все числа из названия формата
-                nums = [float(x) for x in re.findall(r'\d+(?:\.\d+)?', local_name)]
-                dims = [n for n in nums if n >= 100] # Размеры бумаги всегда > 100 мм
-                
-                matched_fmt = None
-                
-                # Вариант 1: Размеры указаны прямо в имени (например, 1682 x 594 или 1485 x 420)
-                if len(dims) >= 2:
-                    pw, ph = max(dims[-2:]), min(dims[-2:])
-                    for fmt, (fw, fh) in ALL_FORMATS.items():
-                        if abs(pw - max(fw, fh)) <= 4.0 and abs(ph - min(fw, fh)) <= 4.0:
-                            matched_fmt = fmt
-                            break
-                            
-                # Вариант 2: Имя формата содержит название ГОСТ (например, "A2x4" или "A3x5")
-                # Сортируем по убыванию длины имени, чтобы A2x4 находился раньше A2
-                if not matched_fmt:
-                    for fmt in sorted(ALL_FORMATS.keys(), key=len, reverse=True):
-                        fmt_regex = re.escape(fmt).replace('A', '[AAАа]').replace('x', '[xXхХ]')
-                        if re.search(r'\b' + fmt_regex + r'\b', local_name, re.IGNORECASE):
-                            matched_fmt = fmt
-                            break
-                            
-                if matched_fmt:
-                    # Если формат найден, сохраняем. 
-                    # Но предпочитаем "full bleed" (без полей), если есть несколько вариантов
-                    is_full_bleed = "full bleed" in local_name.lower() or "без полей" in local_name.lower()
-                    
-                    if matched_fmt not in result or is_full_bleed:
-                        result[matched_fmt] = sys_name
-
+            media_names.extend(self._iter_media_names(printer_name))
         except Exception as e:
             print(f"Ошибка при построении media_map: {e}")
+        return self._map_media_names(media_names)
+
+    def _iter_media_names(self, printer_name: str):
+        layout = _retry_busy(lambda: self.doc.ModelSpace.Layout)
+        self._apply_printer(layout, printer_name)
+        for sys_name in _retry_busy(layout.GetCanonicalMediaNames):
+            local_name = _retry_busy(lambda: layout.GetLocaleMediaName(sys_name))
+            yield local_name, sys_name
+
+    @staticmethod
+    def _map_media_names(media_names) -> dict:
+        import re
+        from core.models import ALL_FORMATS
+
+        result = {}
+        for local_name, sys_name in media_names:
+            # Извлекаем все числа из названия формата
+            nums = [float(x) for x in re.findall(r'\d+(?:\.\d+)?', local_name)]
+            dims = [n for n in nums if n >= 100] # Размеры бумаги всегда > 100 мм
+
+            matched_fmt = None
+
+            # Вариант 1: Размеры указаны прямо в имени (например, 1682 x 594 или 1485 x 420)
+            if len(dims) >= 2:
+                pw, ph = max(dims[-2:]), min(dims[-2:])
+                for fmt, (fw, fh) in ALL_FORMATS.items():
+                    if abs(pw - max(fw, fh)) <= 4.0 and abs(ph - min(fw, fh)) <= 4.0:
+                        matched_fmt = fmt
+                        break
+
+            # Вариант 2: Имя формата содержит название ГОСТ (например, "A2x4" или "A3x5")
+            # Сортируем по убыванию длины имени, чтобы A2x4 находился раньше A2
+            if not matched_fmt:
+                for fmt in sorted(ALL_FORMATS.keys(), key=len, reverse=True):
+                    fmt_regex = re.escape(fmt).replace('A', '[AAАа]').replace('x', '[xXхХ]')
+                    if re.search(r'\b' + fmt_regex + r'\b', local_name, re.IGNORECASE):
+                        matched_fmt = fmt
+                        break
+
+            if matched_fmt:
+                # Если формат найден, сохраняем.
+                # Но предпочитаем "full bleed" (без полей), если есть несколько вариантов
+                is_full_bleed = "full bleed" in local_name.lower() or "без полей" in local_name.lower()
+
+                if matched_fmt not in result or is_full_bleed:
+                    result[matched_fmt] = sys_name
+
         return result
 
     def _resolve_media_name(self, name: str, media_map: dict) -> str:

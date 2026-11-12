@@ -49,6 +49,32 @@ class TestBatchUI(unittest.TestCase):
             self.assertTrue(available.contains(recovered.frameGeometry()))
             recovered.close()
 
+    def test_polyline_layer_is_saved_and_available_for_both_model_modes(self):
+        self.win.combo_source.setCurrentIndex(0)
+        for mode in ("polyline", "all"):
+            self.win.combo_frame_type.setCurrentIndex(self.win.combo_frame_type.findData(mode))
+            self.assertFalse(self.win.polyline_layer_row.isHidden())
+
+        self.win.edit_polyline_layer.setText(" Рамки.АР ")
+        self.win.save_settings()
+        self.assertEqual(self.mock_config.save.call_args.args[0]["polyline_layer"], "Рамки.АР")
+        self.assertEqual(self.win.get_current_profile_settings()["polyline_layer"], "Рамки.АР")
+        self.win.combo_source.setCurrentIndex(1)
+        self.assertTrue(self.win.polyline_layer_row.isHidden())
+        self.win.edit_polyline_layer.clear()
+        self.assertEqual(self.win.selected_polyline_layer(), "0000_Формат")
+
+    def test_empty_layout_warning_keeps_print_selection(self):
+        frame = Frame(1, "1", "Лист1", (0, 0, 0), (0, 0, 0), "Layout", is_empty_layout=True)
+        self.win.frames = [frame]
+        self.win.add_table_row(True, "1", "Лист1", "A2", "Layout", frame=frame)
+
+        name = self.win.table.item(0, 3)
+        self.assertFalse(name.icon().isNull())
+        self.assertIn("Пустой лист", name.toolTip())
+        self.assertEqual(name.text(), "Лист1")
+        self.assertTrue(self.win.is_row_checked(0))
+
     def test_add_table_row_with_dwg(self):
         self.win.table.setRowCount(0)
         self.win.add_table_row(
@@ -117,6 +143,37 @@ class TestBatchUI(unittest.TestCase):
             args = mock_process.call_args[0][0]
             self.assertEqual(len(args), 1)
             self.assertTrue(args[0].endswith("test1.dwg"))
+
+    def test_missing_paper_warning_follows_printer_and_fallback_selection(self):
+        from core.printer import BatchPrinter
+
+        self.win.printer = BatchPrinter(MagicMock())
+        layout = self.win.printer.doc.ModelSpace.Layout
+        layout.GetPlotDeviceNames.return_value = ["Обычный", "Расширенный"]
+        names = {"a3": "ISO A3 (420.00 x 297.00 mm)",
+                 "a1": "ISO A1 (841.00 x 594.00 mm)",
+                 "a3x3": "A3x3 (891.00 x 420.00 mm)"}
+        layout.GetLocaleMediaName.side_effect = names.__getitem__
+        layout.GetCanonicalMediaNames.side_effect = lambda: (
+            ["a3", "a1", "a3x3"] if layout.ConfigName == "Расширенный" else ["a3", "a1"]
+        )
+        self.win.combo_printers.clear()
+        self.win.combo_printers.addItems(["Обычный", "Расширенный"])
+        frame = Frame(1, "1", "Развёртка", (0, 0, 0), (891, 420, 0), "Polyline", "A3x3")
+        self.win.frames = [frame]
+        self.win.add_table_row(True, "1", "Развёртка", "A3x3", "Polyline", frame=frame)
+        item = self.win.table.item(0, 6)
+        self.assertTrue(item.text().startswith("⚠"))
+        self.assertIn(names["a3"], item.toolTip())
+
+        self.win.combo_papers.setCurrentText(names["a1"])
+        self.assertIn(names["a1"], item.toolTip())
+        self.win.combo_printers.setCurrentText("Расширенный")
+        self.assertEqual(item.text(), "A3x3")
+
+        layout.GetCanonicalMediaNames.side_effect = RuntimeError("Нет связи с плоттером")
+        self.win.combo_printers.setCurrentText("Обычный")
+        self.assertEqual(item.text(), "A3x3")
 
     def test_update_paper_sizes_picks_a3_fallback(self):
         self.win.printer = MagicMock()

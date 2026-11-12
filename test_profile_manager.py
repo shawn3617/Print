@@ -535,6 +535,7 @@ class TestExtractProfileSettings(unittest.TestCase):
             "source_mode": "Модель (Model Space)",
             "frame_type": "spds",
             "custom_block_name": "Штамп",
+            "polyline_layer": "Рамки.АР",
             # Сторонние ключи, не относящиеся к профилю печати:
             "theme": "dark",
             "unknown_key": "some_value",

@@ -40,13 +40,19 @@ class TestBatchScanner(unittest.TestCase):
         with patch.object(self.scanner, "scan_document") as mock_scan:
             mock_scan.side_effect = [[frame1], [frame2]]
 
-            frames = self.scanner.scan_files(self.connector, [f1, f2], source_mode="Модель")
+            frames = self.scanner.scan_files(
+                self.connector, [f1, f2], source_mode="Модель", polyline_layer="Рамки.АР"
+            )
 
             self.assertEqual(len(frames), 2)
             self.assertEqual(frames[0].dwg_name, "plan1.dwg")
             self.assertEqual(frames[0].dwg_path, f1)
             self.assertEqual(frames[1].dwg_name, "plan2.dwg")
             self.assertEqual(frames[1].dwg_path, f2)
+            self.assertEqual(
+                [call.kwargs["polyline_layer"] for call in mock_scan.call_args_list],
+                ["Рамки.АР", "Рамки.АР"],
+            )
 
             # doc1 был изначально открыт -> close_document НЕ должен вызываться для него
             # doc2 был открыт нами -> close_document ДОЛЖЕН вызваться для doc2
@@ -110,6 +116,24 @@ class TestBatchScanner(unittest.TestCase):
             frames = self.scanner.scan_files(self.connector, [f1, f2], source_mode="Модель", progress_callback=prog_cb, is_cancelled=is_cancelled)
             # Должен обработаться только 1 файл
             self.assertEqual(len(frames), 1)
+
+    def test_missing_block_queries_are_reported_for_the_selected_space(self):
+        from parsers.block_parser import BlockParser
+
+        rows = [
+            {"block_name": "SHT_A2L", "max_x": 594, "max_y": 420},
+            {"block_name": "SHT_A4P", "layout": "Лист1", "max_x": 210, "max_y": 297},
+        ]
+        with patch.object(BlockParser, "_run_lisp_export", return_value=rows):
+            frames = self.scanner.scan_document(
+                MagicMock(), "custom_block", "sht_a2, SHT_A4*, НетТакого"
+            )
+
+        self.assertEqual(len(frames), 1)
+        self.assertEqual(
+            self.scanner.last_scan_warnings,
+            ["Не найдены рамки по именам или маскам блоков: SHT_A4*, НетТакого."],
+        )
 
     def test_get_parsers_for_mode(self):
         from parsers.spds_parser import SPDSParser

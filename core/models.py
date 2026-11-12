@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any, Tuple, List
 
+DEFAULT_POLYLINE_LAYER = "0000_Формат"
+
 # Стандартные размеры ГОСТ форматов (длинная x короткая в мм)
 GOST_FORMATS = {
     "A4": (297, 210),
@@ -336,4 +338,5 @@ class Frame:
     user_override: bool = False             # Флаг ручного изменения пользователем
     format_candidate_bounds: dict[Tuple[str, float], Tuple[float, float, float, float]] = field(default_factory=dict)
     format_from_source: bool = False        # Явный формат бумаги из свойств рамки
+    is_empty_layout: bool = False           # Пустая модель, на листе нет объектов кроме видовых экранов
 

@@ -11,8 +11,8 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QWidget, QFrame, QApplication
 )
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QIcon, QPixmap, QFont
+from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtGui import QIcon, QFont
 
 from core.resource_utils import get_resource_path
 from core.version import APP_VERSION, APP_RELEASE_DATE
@@ -61,10 +61,9 @@ class AboutDialog(QDialog):
         header_layout.setSpacing(16)
 
         icon_lbl = QLabel()
-        icon_path = get_resource_path("autocad_to_pdf_icon.ico")
-        if os.path.exists(icon_path):
-            pix = QPixmap(icon_path).scaled(54, 54, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            icon_lbl.setPixmap(pix)
+        icon = self.windowIcon()
+        if not icon.isNull():
+            icon_lbl.setPixmap(icon.pixmap(QSize(54, 54), self.devicePixelRatioF()))
         else:
             icon_lbl.setText("🖨️")
             icon_lbl.setStyleSheet(f"font-size: 40px; color: {accent};")

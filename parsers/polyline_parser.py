@@ -4,7 +4,7 @@ from typing import List, Any, Optional, Tuple
 import pythoncom
 import win32com.client
 
-from core.models import Frame, detect_paper_format, detect_paper_format_detailed, ALL_FORMATS, natural_sheet_sort_key
+from core.models import DEFAULT_POLYLINE_LAYER, Frame, detect_paper_format, detect_paper_format_detailed, ALL_FORMATS, natural_sheet_sort_key
 from core.autocad_connector import _retry_busy
 from core.logger import log_warn, log_error
 from parsers.base_parser import BaseParser
@@ -407,16 +407,19 @@ def _number_near_label(local):
 
 
 class PolylineParser(BaseParser):
-    def __init__(self, target_layer: str = "0000_Формат"):
+    def __init__(self, target_layer: str = DEFAULT_POLYLINE_LAYER):
         """
-        :param target_layer: Имя слоя, на котором лежат рамки и тексты
+        :param target_layer: Имена слоёв с рамками и текстами через запятую
         """
-        self.target_layer_name = target_layer
-        self.target_layer = target_layer.lower()
+        names = [name.strip() for name in target_layer.split(",")]
+        self.target_layer_names = {name.lower(): name for name in names if name} or {
+            DEFAULT_POLYLINE_LAYER.lower(): DEFAULT_POLYLINE_LAYER
+        }
+        self.missing_layers: List[str] = []
 
-    def _select_on_layer(self, doc: Any) -> Optional[list]:
+    def _select_on_layers(self, doc: Any, layer_names: List[str]) -> Optional[list]:
         """
-        Объекты модели на целевом слое (полилинии и тексты) одним запросом через набор выбора.
+        Полилинии и тексты модели на указанных слоях одним запросом через набор выбора.
         Это в десятки раз быстрее, чем перебирать через COM каждый объект ModelSpace.
         Если набор выбора не сработал — None (тогда перебираем по-старому).
         """
@@ -426,18 +429,22 @@ class PolylineParser(BaseParser):
                 doc.SelectionSets.Item(ss_name).Delete()
             except Exception:
                 pass
-            ss = doc.SelectionSets.Add(ss_name)
-            ftype = win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_I2, [0, 8, 410])
+            ss = _retry_busy(lambda: doc.SelectionSets.Add(ss_name))
+            # В фильтрах AutoCAD имена слоёв интерпретируются как маски.
+            layer_filters = [re.sub(r"[#@.*?~\[\],`-]", lambda m: "`" + m.group(), name) for name in layer_names]
+            filter_codes = [0, 410, -4] + [8] * len(layer_filters) + [-4]
+            filter_values = ["LWPOLYLINE,POLYLINE,TEXT,MTEXT", "Model", "<OR", *layer_filters, "OR>"]
+            ftype = win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_I2, filter_codes)
             fdata = win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_VARIANT,
-                                            ["LWPOLYLINE,POLYLINE,TEXT,MTEXT", self.target_layer_name, "Model"])
+                                            filter_values)
             try:
                 # 5 = acSelectionSetAll; точки не нужны — передаём «пропущенный аргумент»
                 no_arg = getattr(pythoncom, "ArgNotFound", pythoncom.Missing)
-                ss.Select(5, no_arg, no_arg, ftype, fdata)
-                objs = [ss.Item(i) for i in range(ss.Count)]
+                _retry_busy(lambda: ss.Select(5, no_arg, no_arg, ftype, fdata))
+                objs = [_retry_busy(lambda: ss.Item(i)) for i in range(_retry_busy(lambda: ss.Count))]
             finally:
                 try:
-                    ss.Delete()
+                    _retry_busy(ss.Delete)
                 except Exception:
                     pass
             return objs
@@ -448,25 +455,41 @@ class PolylineParser(BaseParser):
 
     def find_frames(self, doc: Any) -> List[Frame]:
         frames = []
+        self.missing_layers = []
 
         # Быстрая проверка таблицы слоев
-        try:
+        def resolve_layer_names():
             layers = doc.Layers
-            if not any(getattr(layers.Item(i), 'Name', '').lower() == self.target_layer
-                       for i in range(layers.Count)):
-                return frames
-        except Exception:
-            pass
+            remaining = set(self.target_layer_names)
+            found = []
+            for i in range(layers.Count):
+                name = layers.Item(i).Name
+                key = name.lower()
+                if key in remaining:
+                    found.append(name)
+                    remaining.remove(key)
+                    if not remaining:
+                        break
+            return found
 
-        # 1. Полилинии и тексты с нужного слоя
-        objs = self._select_on_layer(doc)
+        try:
+            layer_names = _retry_busy(resolve_layer_names)
+            found_names = {name.lower() for name in layer_names}
+            self.missing_layers = [name for key, name in self.target_layer_names.items() if key not in found_names]
+        except Exception:
+            layer_names = list(self.target_layer_names.values())
+        if not layer_names:
+            return frames
+
+        # 1. Полилинии и тексты с указанных слоёв
+        objs = self._select_on_layers(doc, layer_names)
         if objs is None:
             objs = []
-            model_space = doc.ModelSpace
-            for i in range(model_space.Count):
+            model_space = _retry_busy(lambda: doc.ModelSpace)
+            for i in range(_retry_busy(lambda: model_space.Count)):
                 try:
-                    obj = model_space.Item(i)
-                    if getattr(obj, 'Layer', '').lower() == self.target_layer:
+                    obj = _retry_busy(lambda: model_space.Item(i))
+                    if _retry_busy(lambda: obj.Layer).lower() in self.target_layer_names:
                         objs.append(obj)
                 except Exception:
                     continue
@@ -480,9 +503,9 @@ class PolylineParser(BaseParser):
         texts = []  # (x_центра, y_центра, текст) — габариты текста считаем один раз
         for obj in objs:
             try:
-                ent_name = getattr(obj, 'EntityName', '')
+                ent_name = _retry_busy(lambda: obj.EntityName)
                 if 'Polyline' in ent_name:
-                    mn, mx = obj.GetBoundingBox()
+                    mn, mx = _retry_busy(lambda: obj.GetBoundingBox())
                     try:
                         lts = float(_retry_busy(lambda: obj.LinetypeScale))
                     except Exception:
@@ -491,12 +514,13 @@ class PolylineParser(BaseParser):
                     polys.append({"bbox": (mn[0], mn[1], mx[0], mx[1]), "ref": obj,
                                   "ltscale": lts if default_lts is not None and lts != default_lts else None})
                 elif ent_name in ('AcDbText', 'AcDbMText'):
-                    val = _clean_text(getattr(obj, 'TextString', ''))
+                    val = _clean_text(_retry_busy(lambda: obj.TextString))
                     if val:
                         # реальные габариты — чтобы не зависеть от выравнивания (Alignment)
-                        t_min, t_max = obj.GetBoundingBox()
+                        t_min, t_max = _retry_busy(lambda: obj.GetBoundingBox())
                         texts.append(((t_min[0] + t_max[0]) / 2, (t_min[1] + t_max[1]) / 2, val))
-            except Exception:
+            except Exception as e:
+                log_warn("Не удалось прочитать объект на слое рамок", exc=e, module="PolylineParser")
                 continue
 
         # 2. Геометрия: внешняя граница + внутренняя рамка = один лист; графы штампа по ГОСТ
@@ -518,14 +542,14 @@ class PolylineParser(BaseParser):
                     possible_formats = [(c.paper_format, c.scale) for c in det_res.candidates]
                     reason, ambiguous = det_res.reason, det_res.is_ambiguous
                 frame = Frame(
-                    object_id=getattr(poly, 'ObjectID', 0),
+                    object_id=_retry_busy(lambda: poly.ObjectID),
                     sheet_number=f["sheet_number"],
                     sheet_name=f["sheet_name"],
                     min_point=(x1, y1, 0.0),
                     max_point=(x2, y2, 0.0),
                     source_type="Polyline",
                     paper_format=fmt,
-                    handle=getattr(poly, 'Handle', ''),
+                    handle=_retry_busy(lambda: poly.Handle),
                     doc_code=f.get("doc_code", ""),
                     object_name=f.get("object_name", ""),
                     building_name=f.get("building_name", ""),
