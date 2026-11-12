@@ -4,5 +4,5 @@
 и передаёт её в установщик (installer/setup.iss), окно «О программе» и проверку обновлений.
 """
 
-APP_VERSION = "1.3.6"
-APP_RELEASE_DATE = "10 ноября 2026"
+APP_VERSION = "1.4.0"
+APP_RELEASE_DATE = "12 ноября 2026"
